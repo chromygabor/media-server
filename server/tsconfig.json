@@ -1,0 +1,10 @@
+{
+  "extends": "@workspace/tsconfig/base.json",
+  "compilerOptions": {
+    "module": "nodenext",
+    "moduleResolution": "nodenext",
+    "noEmit": true,
+    "types": ["node"]
+  },
+  "include": ["scripts", "test", "njs/*.d.ts", "vitest.config.ts"]
+}

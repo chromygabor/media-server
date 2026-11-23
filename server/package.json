@@ -1,0 +1,26 @@
+{
+  "name": "@workspace/media-server",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "keys:new": "tsx scripts/keys-new.ts",
+    "sign": "tsx scripts/sign.ts",
+    "test": "vitest run",
+    "lint": "oxlint --type-aware scripts/ test/ njs/",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@workspace/media-token": "workspace:*"
+  },
+  "devDependencies": {
+    "@workspace/tsconfig": "workspace:*",
+    "@types/node": "^24.0.0",
+    "fast-check": "^4.10.2",
+    "oxlint": "^1.58.0",
+    "oxlint-tsgolint": "^7.0.2001",
+    "tsx": "^4.20.0",
+    "typescript": "~6.0.3",
+    "vitest": "^4.1.2"
+  }
+}

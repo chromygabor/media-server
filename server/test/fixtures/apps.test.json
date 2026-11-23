@@ -1,0 +1,23 @@
+{
+  "elearning": {
+    "dir": "elearning",
+    "keys": { "t2026a": "CSAK-TESZT-kulcs-elearning-bongeszos-NEM-ELES-0001" },
+    "contentKeys": { "t2026c": "CSAK-TESZT-kulcs-elearning-tartalom-NEM-ELES-00001" },
+    "origins": ["https://elearning.example.test", "http://localhost:3000"],
+    "corp": "same-site"
+  },
+  "helyi": {
+    "dir": ".",
+    "keys": { "t2026a": "CSAK-TESZT-kulcs-helyi-bongeszos-NEM-ELES-0000000001" },
+    "contentKeys": {},
+    "origins": [],
+    "corp": "cross-origin"
+  },
+  "masik": {
+    "dir": "masik",
+    "keys": { "t2026a": "CSAK-TESZT-kulcs-masik-bongeszos-NEM-ELES-0000000001" },
+    "contentKeys": {},
+    "origins": [],
+    "corp": "same-site"
+  }
+}

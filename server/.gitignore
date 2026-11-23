@@ -1,0 +1,6 @@
+# Titkok és helyi állapot (implementációs terv P9): kulcs soha nem kerül a repóba.
+.env
+secrets/*
+!secrets/README.md
+test/.tmp/
+logs/

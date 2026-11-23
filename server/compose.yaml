@@ -1,0 +1,54 @@
+# A médiaszerver (terv 4.4, 7.2, 7.3; implementációs terv WP2).
+# Helyben és a szerveren ugyanez; a különbség a .env-ben (lásd .env.example). Saját image nincs: a hivatalos,
+# tagre és digestre rögzített nginx (njs 1.0.2), a konfig, az njs és az apps.json csak olvasva csatolva.
+#
+#   docker compose up -d --wait
+#   docker compose exec media nginx -c /etc/nginx/media/nginx.conf -t          # konfigteszt
+#   docker compose exec media nginx -c /etc/nginx/media/nginx.conf -s reload   # újratöltés
+
+name: ${COMPOSE_PROJECT_NAME:-media-server}
+
+services:
+  media:
+    image: nginx:1.30.7-alpine@sha256:caf4e1e032a20f9c3c5e28fc7f25ffd768ad8677b4975c54193075997b3a97e3
+    # Az image entrypointja csak a templates/ envsubst-jéhez kell (realip.conf a NET_GATEWAY-ből).
+    command: ["nginx", "-c", "/etc/nginx/media/nginx.conf", "-g", "daemon off;"]
+    environment:
+      NGINX_ENVSUBST_TEMPLATE_DIR: /etc/nginx/media/templates
+      NGINX_ENVSUBST_OUTPUT_DIR: /etc/nginx/conf.d
+      NET_GATEWAY: ${NET_GATEWAY:-172.29.90.1}
+    read_only: true
+    tmpfs:
+      - /etc/nginx/conf.d
+      - /var/cache/nginx
+      - /run
+      - /tmp
+    ports:
+      - "${BIND:-127.0.0.1}:${PORT:-10090}:80"
+    volumes:
+      - ./nginx:/etc/nginx/media:ro
+      - ./njs:/etc/nginx/njs:ro
+      - ${APPS_JSON:?APPS_JSON kell (.env)}:/etc/nginx/secrets/apps.json:ro
+      - ${MEDIA_ROOT:?MEDIA_ROOT kell (.env)}:/srv/media:ro
+    networks:
+      - media
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: 50m
+        max-file: "5"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1/healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+
+networks:
+  media:
+    # Rögzített alhálózat: a portkiadás a kapcsolatot az átjáróról adja, a real_ip csak azt bízza meg (P4).
+    ipam:
+      config:
+        - subnet: ${NET_SUBNET:-172.29.90.0/24}
+          gateway: ${NET_GATEWAY:-172.29.90.1}
