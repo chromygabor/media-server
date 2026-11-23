@@ -18,6 +18,8 @@ scripts/sign.ts           próbalink aláírása
 secrets/                  gitignore-olt (apps.local.json, apps.prod.json)
 test/                     docker nélküli tesztek (pnpm test); fixtures/apps.test.json: CSAK TESZT kulcsok
 test/docker/              docker-integrációs teszt (pnpm media-server:test), lásd alább
+deploy/deploy.sh          telepítés a szerverre (pnpm media-server:deploy [--dry-run]), lásd Élesítés
+deploy/host-nginx.conf.example   a host-nginx media.example.com blokkja (TLS, proxy a 10090-re)
 ```
 
 ## Kérés útja (terv 4.4)
@@ -69,4 +71,139 @@ Megszakított futás után a maradék: `docker compose ls` → `docker compose -
 
 ## Élesítés (media-host)
 
-A WP4 tölti ki (deploy, host-nginx blokk, egyszeri sudo-lépések, rotáció).
+Terv 7.3, implementációs terv WP4. A media-host (`media-host`, felhasználó `deploy`, a `docker` csoport tagja)
+host-nginxe (1.24) a TLS-végpont a wildcard tanúsítvánnyal (`*.example.com`); a médiaszerver konténere csak a
+loopbacken (`127.0.0.1:10090`) érhető el, a `media.example.com` blokk proxyz rá. A 80-as `00-http` site már
+HTTPS-re irányít, oda nem kell semmi.
+
+### Könyvtárfa a szerveren
+
+```
+/srv/media-server/                (deploy:docker, 0755; egyszeri sudo-lépés)
+  compose.yaml                    a repóból – deploy.sh
+  nginx/                          a repóból – deploy.sh (--delete csak ezen belül)
+  njs/                            a repóból – deploy.sh (--delete csak ezen belül)
+  .env                            csak itt, kézzel (lásd alább); a deploy.sh soha nem írja
+  secrets/                        0700
+    apps.json                     csak itt, 0400; a deploy.sh soha nem írja
+  data/                           MEDIA_ROOT; a deploy.sh soha nem írja
+    elearning/                    az első app gyökere (MS3-ig csak próbafájl)
+    proba/                        a második (próba) app gyökere
+```
+
+### Egyszeri sudo-lépések (a tulajdonos)
+
+A host-blokk példánya a szerveren: `~/media-server-host.conf` (= `deploy/host-nginx.conf.example`). Sorrend: előbb a
+könyvtár, utána (a konténer első indítása után, hogy ne legyen `502`) a host-blokk. A blokk korábban is élesíthető;
+addig a `media.example.com` `502`-t ad.
+
+```
+sudo install -d -o deploy -g docker -m 0755 /srv/media-server
+sudo install -o root -g root -m 0644 ~/media-server-host.conf /etc/nginx/sites-available/media-site
+sudo ln -s /etc/nginx/sites-available/media-site /etc/nginx/sites-enabled/media-site
+sudo nginx -t && sudo systemctl reload nginx
+```
+
+Visszaállás: `sudo rm /etc/nginx/sites-enabled/media-site && sudo nginx -t && sudo systemctl reload nginx`.
+
+### `.env` és könyvtárak a szerveren (sudo nélkül)
+
+```
+ssh media-host 'install -d -m 0700 /srv/media-server/secrets && install -d /srv/media-server/data/elearning /srv/media-server/data/proba'
+ssh media-host 'cat > /srv/media-server/.env' <<'EOF'
+MEDIA_ROOT=/srv/media-server/data
+APPS_JSON=./secrets/apps.json
+BIND=127.0.0.1
+PORT=10090
+NET_SUBNET=172.29.90.0/24
+NET_GATEWAY=172.29.90.1
+COMPOSE_PROJECT_NAME=media-server
+EOF
+```
+
+A `172.29.90.0/24` és a `10090` az alapérték. Ha ütközne, a `.env`-ben a `NET_SUBNET` / `NET_GATEWAY` együtt váltandó (a `real_ip` az átjárót
+bízza meg).
+
+### Kulcsok és az `apps.json` a szerveren
+
+A kulcsok a fejlesztőgépen készülnek (a szerveren nincs Node), a gitignore-olt `secrets/apps.prod.json`-ba
+(ebből ír alá a `sign` is), és innen kerülnek fel. A próbakulcsok az MS2-ben
+rotálódnak; az éles kulcs ott készül, és nem hagyja el a szervert és a backend env-jét.
+
+```
+pnpm media-server:keys <app> --kid <kid> --write secrets/apps.prod.json
+pnpm media-server:keys <app> --kid <kid> --content --write secrets/apps.prod.json
+pnpm media-server:keys <app2> --kid <kid> --write secrets/apps.prod.json
+# az origins kézzel (pl. elearning: ["https://app.example.com"]); a dir alapból az app neve
+```
+
+Feltöltés új fájlként, atomikusan (a régi `0400`-as fájl nem írható felül, és a `mv` új inode-ot ad – a
+`deploy.sh` ezt észleli, és `restart`-ot ad):
+
+```
+scp server/secrets/apps.prod.json media-host:/srv/media-server/secrets/apps.json.new
+ssh media-host 'cd /srv/media-server/secrets && chmod 0400 apps.json.new && mv -f apps.json.new apps.json'
+pnpm media-server:deploy                    # check-apps.js, nginx -t, majd restart (új inode)
+```
+
+Az `apps.json`-t menteni kell (jelszókezelő / production-mentés, nem git).
+
+**Rotáció** (appenként és kulcsfajtánként független, terv 4.3): az új `kid` előbb a szerverre (`keys:new --write`
+→ feltöltés → `deploy`), csak utána vált rá az aláíró (MS2-ben a backend env-je; a `sign`-nál `--kid`). A régi
+kulcs a leghosszabb lejárat után törölhető (böngészős: 6 óra, tartalom: 5 perc): a bejegyzés kézzel ki a helyi
+fájlból, újra feltöltés + `deploy`. **Új app:** egy `keys:new` (új app-névvel), `install -d data/<dir>`, feltöltés,
+`deploy` – kód nem változik.
+
+### Deploy
+
+```
+pnpm media-server:deploy --dry-run          # előfeltételek + az rsync változáslistája; a szerveren nem változik semmi
+pnpm media-server:deploy                    # = server/deploy/deploy.sh
+```
+
+Környezet: `DEPLOY_HOST` (alap `media-host`), `DEPLOY_USER` (`deploy`), `DEPLOY_DIR` (`/srv/media-server`),
+`DEPLOY_SSH_OPTS` (`-o BatchMode=yes -o ConnectTimeout=10`). Lépések:
+
+1. Előfeltételek: helyben `rsync`, `ssh`, a forrásfájlok; a szerveren a `DEPLOY_DIR` létezik és írható, a `.env` és a
+   `secrets/apps.json` megvan és olvasható, a `.env` `APPS_JSON` / `MEDIA_ROOT` útvonala létezik (különben a
+   docker root-ként hozná létre a hiányzó könyvtárat), `docker compose` és `curl` elérhető. Hiánynál egyértelmű
+   `HIBA:` sor, nem nulla kilépés, a szerveren semmi nem változik.
+2. `rsync -rt --checksum --chmod=D755,F644`: a `compose.yaml`, és `--delete`-tel az `nginx/` és az `njs/` – a
+   `--delete` csak ezen a két könyvtáron belül hat. A `.env`, `secrets/`, `data/` sosem íródik és nem törlődik.
+   A `--checksum` miatt csak a tartalmában változott fájl cserélődik (új inode csak valódi változásnál).
+3. A szerveren: `docker compose config -q`; `check-apps.js` és `nginx -c /etc/nginx/media/nginx.conf -t` egy
+   eldobható konténerben (`docker compose run --rm`, tehát az új konfiggal és a mostani `apps.json`-nal – a futó
+   konténert hiba esetén nem érinti); `docker compose up -d --wait`; ha a konténer nem most jött létre: a
+   `compose.yaml` vagy az `apps.json` inode-ja változott → `docker compose restart media`, különben
+   `nginx -c … -s reload`; végül `/healthz` → `204`.
+
+### Próbalink
+
+```
+pnpm --silent media-server:sign <app> <assetKey> --apps secrets/apps.prod.json --base https://media.example.com [--u <uuid>] [--kid <kid>]
+pnpm --silent media-server:sign <app> _content/<v>.json.gz --content --apps secrets/apps.prod.json --base https://media.example.com
+curl -sI '<url>'                            # 200; Range: curl -s -o /dev/null -w '%{http_code}\n' -r 0-99 '<url>' → 206
+```
+
+Az app `dir`-je a szerveren `<dir>`, tehát a `<assetKey>` a `data/<dir>/` alatti relatív útvonal.
+
+### Hibakeresés
+
+```
+ssh media-host
+cd /srv/media-server
+docker compose ps                                   # állapot, health
+docker compose logs --tail 100 -f media             # JSON-napló (app, kid, u, path, status, reason, IP; token nélkül)
+docker compose exec -T media nginx -c /etc/nginx/media/nginx.conf -t   # a konfig CSAK a -c-vel érhető el
+docker compose exec -T media nginx -c /etc/nginx/media/nginx.conf -T   # a betöltött teljes konfig
+docker compose exec -T media njs -q -m -p /etc/nginx/njs /etc/nginx/njs/check-apps.js
+curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:10090/healthz     # 204
+```
+
+- A `nginx -t` / `-s reload` `-c` nélkül az image alapkonfigját nézi, nem a miénket.
+- Minden kérés `403`, `reason: apps-invalid` → hibás `apps.json` (a `check-apps.js` megmondja, mi).
+- `media.example.com` → `502`: a konténer nem fut, vagy nem a `10090`-on. A host blokkja szándékosan nem
+  naplóz (`access_log off`, `error_log … crit`, mert a hibasorban a tokenes kérés-sor is benne volna); a diagnózis a
+  konténer naplója és a `/healthz`.
+- Az `apps.json` cseréje után a futó konténer a régi fájlt látja (egy fájlként csatolt kötet): `docker compose
+  restart media` (a `deploy.sh` ezt magától eldönti).

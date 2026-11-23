@@ -1,0 +1,57 @@
+# media.example.com -> médiaszerver (Docker, 127.0.0.1:10090)
+# terv 7.3, implementációs terv WP4; minta: /etc/nginx/sites-available/other-site.
+# Helye a szerveren: /etc/nginx/sites-available/media-site (+ symlink a sites-enabled-be; README).
+# A sima HTTP (80) -> HTTPS átirányítást és a certbot challenge-et a 00-http site kezeli; itt nem kell semmi.
+
+server {
+    listen 443 ssl;
+    listen [::]:443 ssl;
+    server_name media.example.com;
+
+    # A wildcard tanúsítvány (*.example.com) – ugyanaz, mint a other-site-é; certbot nem kell.
+    ssl_certificate /etc/letsencrypt/live/example.com/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/example.com/privkey.pem;
+    include snippets/ssl-params.conf;
+
+    # Az URL-ben token van: a host nem naplózza a kéréseket (a médiaszerver JSON-naplója token nélkül naplóz).
+    access_log off;
+    # Az error_log hibasora (pl. 502-nél: "connect() failed … request: "GET /bcdn_token=…") a kérés-sort is
+    # tartalmazza, ezért ennél a blokknál csak crit-től. Hibakeresés: a konténer naplója és a /healthz (README).
+    error_log /var/log/nginx/error.log crit;
+
+    # A http-szintű "gzip on" itt ki: a média már tömörített, a _content/*.json.gz Content-Encoding nélkül megy.
+    gzip off;
+
+    # Csak GET / HEAD / OPTIONS jön, törzs nélkül (a POST-ot a konténer 405-tel utasítja el).
+    client_max_body_size 1k;
+
+    location / {
+        # URI-rész NÉLKÜL: a nyers kérés-URI változatlanul megy át. Ha itt "/" vagy más URI állna, az nginx a
+        # normalizált URI-t adná tovább (%2F dekódolva, // összevonva), és a token útvonala elromlana (terv 4.1).
+        proxy_pass http://127.0.0.1:10090;
+        proxy_http_version 1.1;
+        proxy_set_header Connection "";
+        proxy_redirect off;
+
+        # Valódi kliens-IP: felülírva, nem hozzáfűzve (a konténer real_ip-je csak az átjárótól fogadja el).
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $remote_addr;
+        proxy_set_header X-Forwarded-Proto $scheme;
+
+        # Range / If-Range változatlanul tovább (tekerés: 206 / 416 a konténertől).
+        proxy_set_header Range $http_range;
+        proxy_set_header If-Range $http_if_range;
+
+        # Nincs pufferelés és nincs cache: a konténer limit_rate-je hat, a host nem ír ideiglenes fájlt.
+        proxy_buffering off;
+        proxy_request_buffering off;
+        proxy_cache off;
+
+        # Hosszú videó, lassú kliens.
+        proxy_connect_timeout 5s;
+        proxy_read_timeout 300s;
+        proxy_send_timeout 300s;
+        send_timeout 300s;
+    }
+}

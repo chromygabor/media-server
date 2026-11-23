@@ -100,3 +100,32 @@ describe('napló: token nélkül', () => {
     expect(mediaConf).toMatch(/limit_req_log_level\s+info;/);
   });
 });
+
+describe('deploy: host-nginx blokk és deploy.sh (WP4)', () => {
+  const host = read('deploy/host-nginx.conf.example');
+  const deploy = read('deploy/deploy.sh');
+  const port = /^PORT=(\d+)$/m.exec(envExample)?.[1];
+
+  it('proxy_pass URI-rész nélkül, a .env.example portjára (különben a %2F dekódolódik)', () => {
+    const passes = [...host.matchAll(/^\s*proxy_pass\s+([^;]+);/gm)].map((m) => m[1]);
+    expect(passes).toEqual([`http://127.0.0.1:${port}`]);
+  });
+
+  it('a host nem naplóz tokent, nem tömörít, nem pufferel, nem cache-el', () => {
+    expect(host).toMatch(/^\s*access_log off;/m);
+    expect(host).toMatch(/^\s*error_log \S+ crit;/m);
+    expect(host).toMatch(/^\s*gzip off;/m);
+    expect(host).toMatch(/^\s*proxy_buffering off;/m);
+    expect(host).toMatch(/^\s*proxy_cache off;/m);
+    expect(host).toMatch(/^\s*proxy_set_header X-Forwarded-For \$remote_addr;/m);
+    expect(host).toMatch(/^\s*server_name media\.example\.com;/m);
+  });
+
+  it('a deploy.sh csak a compose.yaml-t, az nginx/-t és az njs/-t szinkronizálja, sudo nélkül', () => {
+    expect(deploy).toMatch(/^set -euo pipefail$/m);
+    expect(deploy).toMatch(/for d in nginx njs; do/);
+    expect(deploy).not.toMatch(/\bsudo\s+(?!install -d)/);
+    const rsyncTargets = [...deploy.matchAll(/"\$TARGET:\$DEPLOY_DIR\/([^"]*)"/g)].map((m) => m[1]);
+    expect(rsyncTargets).toEqual(['compose.yaml', '$d/']);
+  });
+});
