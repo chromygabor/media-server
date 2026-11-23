@@ -88,8 +88,8 @@ HTTPS-re irányít, oda nem kell semmi.
   secrets/                        0700
     apps.json                     csak itt, 0400; a deploy.sh soha nem írja
   data/                           MEDIA_ROOT; a deploy.sh soha nem írja
-    elearning/                    az első app gyökere (MS3-ig csak próbafájl)
-    proba/                        a második (próba) app gyökere
+    elearning/                    az appok közös gyökere
+    proba/                        a volt próba app gyökere (D13: az app törölve; a könyvtár a WP23-ban törlendő)
 ```
 
 ### Egyszeri sudo-lépések (a tulajdonos)
@@ -110,7 +110,7 @@ Visszaállás: `sudo rm /etc/nginx/sites-enabled/media-site && sudo nginx -t && 
 ### `.env` és könyvtárak a szerveren (sudo nélkül)
 
 ```
-ssh media-host 'install -d -m 0700 /srv/media-server/secrets && install -d /srv/media-server/data/elearning /srv/media-server/data/proba'
+ssh media-host 'install -d -m 0700 /srv/media-server/secrets && install -d /srv/media-server/data/<dir>'
 ssh media-host 'cat > /srv/media-server/.env' <<'EOF'
 MEDIA_ROOT=/srv/media-server/data
 APPS_JSON=./secrets/apps.json
@@ -128,15 +128,23 @@ bízza meg).
 ### Kulcsok és az `apps.json` a szerveren
 
 A kulcsok a fejlesztőgépen készülnek (a szerveren nincs Node), a gitignore-olt `secrets/apps.prod.json`-ba
-(ebből ír alá a `sign` is), és innen kerülnek fel. A próbakulcsok az MS2-ben
-rotálódnak; az éles kulcs ott készül, és nem hagyja el a szervert és a backend env-jét.
+(ebből ír alá a `sign` is), és innen kerülnek fel. Az `apps.json` két példányban él (D12): a fejlesztőgépen
+(`secrets/apps.prod.json`, `0600`, gitignore-olt) és a szerveren (`secrets/apps.json`, `0400`); jelszókezelő nincs.
+Elvesztése nem adatvesztés: új kulcs + feltöltés + `deploy` + a backend env-je.
+
+Egy app mellé fejlesztői app is felvehető ugyanazzal a `dir`-rel, saját kulcsokkal és a fejlesztői originekkel (D2);
+az éles appon nem lazítunk.
 
 ```
 pnpm media-server:keys <app> --kid <kid> --write secrets/apps.prod.json
 pnpm media-server:keys <app> --kid <kid> --content --write secrets/apps.prod.json
-pnpm media-server:keys <app2> --kid <kid> --write secrets/apps.prod.json
-# az origins kézzel (pl. elearning: ["https://app.example.com"]); a dir alapból az app neve
+pnpm media-server:keys <app>-dev --dir <dir> --kid <kid> --write secrets/apps.prod.json
+pnpm media-server:keys <app>-dev --kid <kid> --content --write secrets/apps.prod.json
+# az origins és a corp kézzel (a keys:new alapja: origins [], corp same-site; a dir alapból az app neve)
 ```
+
+A `keys:new` stdout-ja a kulcsot is kiírja: élesben `>/dev/null`-ra irányítandó; a backend env-értéke a helyi
+fájlból vehető (`jq -r '.["<app>"].keys' …`).
 
 Feltöltés új fájlként, atomikusan (a régi `0400`-as fájl nem írható felül, és a `mv` új inode-ot ad – a
 `deploy.sh` ezt észleli, és `restart`-ot ad):
@@ -147,7 +155,7 @@ ssh media-host 'cd /srv/media-server/secrets && chmod 0400 apps.json.new && mv -
 pnpm media-server:deploy                    # check-apps.js, nginx -t, majd restart (új inode)
 ```
 
-Az `apps.json`-t menteni kell (jelszókezelő / production-mentés, nem git).
+Nincs más mentés (D12): a két példány elég, a kulcs pótolható.
 
 **Rotáció** (appenként és kulcsfajtánként független, terv 4.3): az új `kid` előbb a szerverre (`keys:new --write`
 → feltöltés → `deploy`), csak utána vált rá az aláíró (MS2-ben a backend env-je; a `sign`-nál `--kid`). A régi
@@ -163,7 +171,14 @@ pnpm media-server:deploy                    # = server/deploy/deploy.sh
 ```
 
 Környezet: `DEPLOY_HOST` (alap `media-host`), `DEPLOY_USER` (`deploy`), `DEPLOY_DIR` (`/srv/media-server`),
-`DEPLOY_SSH_OPTS` (`-o BatchMode=yes -o ConnectTimeout=10`). Lépések:
+`DEPLOY_SSH_OPTS` (`-o BatchMode=yes -o ConnectTimeout=10`). Ha az mDNS kihagy (P16), az IP-vel, a meglévő
+host-kulcsra hivatkozva (a `known_hosts` `media-host`-bejegyzése):
+
+```
+DEPLOY_HOST=192.0.2.10 DEPLOY_SSH_OPTS="-o BatchMode=yes -o ConnectTimeout=10 -o HostKeyAlias=media-host" pnpm media-server:deploy
+```
+
+Ugyanez a kézi `ssh` / `scp`-nél: `-o HostKeyAlias=media-host deploy@media-host`. Lépések:
 
 1. Előfeltételek: helyben `rsync`, `ssh`, a forrásfájlok; a szerveren a `DEPLOY_DIR` létezik és írható, a `.env` és a
    `secrets/apps.json` megvan és olvasható, a `.env` `APPS_JSON` / `MEDIA_ROOT` útvonala létezik (különben a
@@ -201,7 +216,9 @@ pnpm --silent media-server:sign <app> _content/<v>.json.gz --content --apps secr
 curl -sI '<url>'                            # 200; Range: curl -s -o /dev/null -w '%{http_code}\n' -r 0-99 '<url>' → 206
 ```
 
-Az app `dir`-je a szerveren `<dir>`, tehát a `<assetKey>` a `data/<dir>/` alatti relatív útvonal.
+Az app `dir`-je a szerveren `<dir>`, tehát a `<assetKey>` a `data/<dir>/` alatti
+relatív útvonal. A `sign` a `_content/`-et csak `--content`-tel (tartalomkulccsal) írja alá; a szerver a böngészős
+kulccsal aláírt `_content/`-kérést `403`-mal utasítja el.
 
 ### Hibakeresés
 
