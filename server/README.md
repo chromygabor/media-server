@@ -15,6 +15,7 @@ njs/media.js              token-ellenőrzés (= media-token verifySignedPath: st
 njs/check-apps.js         az apps.json tartalmi ellenőrzése a konténerben (njs CLI)
 scripts/keys-new.ts       kulcsgenerálás
 scripts/sign.ts           próbalink aláírása
+scripts/make-test-video.sh   szintetikus próbamédia (ffmpeg) az élő elfogadáshoz, lásd Élesítés
 secrets/                  gitignore-olt (apps.local.json, apps.prod.json)
 test/                     docker nélküli tesztek (pnpm test); fixtures/apps.test.json: CSAK TESZT kulcsok
 test/docker/              docker-integrációs teszt (pnpm media-server:test), lásd alább
@@ -176,6 +177,21 @@ Környezet: `DEPLOY_HOST` (alap `media-host`), `DEPLOY_USER` (`deploy`), `DEPLOY
    konténert hiba esetén nem érinti); `docker compose up -d --wait`; ha a konténer nem most jött létre: a
    `compose.yaml` vagy az `apps.json` inode-ja változott → `docker compose restart media`, különben
    `nginx -c … -s reload`; végül `/healthz` → `204`.
+
+### Próbafájlok (csak szintetikus)
+
+A szerverre MS3 előtt csak szintetikus média kerül (valódi tartalom nem része a repónak). A
+`scripts/make-test-video.sh` ffmpeg-gel generál (a szerveren nincs ffmpeg, ezért helyben, és `rsync`-kel fel):
+
+```
+server/scripts/make-test-video.sh /tmp/media-data          # 44 perces 720p MP4 (~495 MB, +faststart), M4A, JPG,
+                                                                     # .build.json, _content/2026.11.23-proba.json.gz, proba/…
+rsync -rt --chmod=D755,F644 /tmp/media-data/ media-host:/srv/media-server/data/
+```
+
+Útvonalak (`data/` alatt): `elearning/proba-tema/lessons/ch-01-l01/m01.720p.mp4` (`.audio.m4a`, `.poster.jpg`,
+`.720p.mp4.build.json`), `elearning/_content/2026.11.23-proba.json.gz`, `proba/proba-tema/lessons/ch-01-l01/m01.720p.mp4`.
+A 44 perces fájl teljes letöltése a `limit_rate_after 30m` / `limit_rate 600k` miatt ~13 perc (szándékos).
 
 ### Próbalink
 
