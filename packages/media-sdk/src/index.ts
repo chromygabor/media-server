@@ -1,0 +1,37 @@
+// A médiaszerver tokenje (terv 4.1–4.4; implementációs terv WP1).
+// Tiszta TS, futásidejű függőség nélkül (`node:crypto`); a közös vektorok: `@workspace/media-token/test-vectors.json`.
+
+export {
+  appLookupFrom,
+  base64url,
+  buildSignedPath,
+  parseSignedPath,
+  signToken,
+  timingSafeEqualStr,
+  verifySignedPath,
+} from './token.js';
+export type {
+  AppKeys,
+  AppLookup,
+  BuildSignedPathInput,
+  ParseError,
+  ParsedSignedPath,
+  SignTokenInput,
+  TokenParams,
+  VerifyFailureReason,
+  VerifyResult,
+} from './token.js';
+export {
+  CONTENT_DIR,
+  CONTENT_FILE_EXT,
+  CONTENT_FILE_TYPE,
+  MEDIA_CONTENT_TYPES,
+  classifyMediaPath,
+  isPrefixOf,
+  isSafeMediaPath,
+  isSafeSegment,
+  isSafeTokenPath,
+} from './path.js';
+export type { MediaKind, MediaPathInfo } from './path.js';
+export { bucketExpires } from './expires.js';
+export type { BucketOptions } from './expires.js';

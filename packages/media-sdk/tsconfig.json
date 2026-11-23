@@ -1,0 +1,8 @@
+{
+  "extends": "@workspace/tsconfig/library.json",
+  "compilerOptions": {
+    // A HMAC a `node:crypto`-ból jön (futásidejű függőség nincs).
+    "types": ["node"]
+  },
+  "include": ["src"]
+}
