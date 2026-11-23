@@ -17,6 +17,7 @@ scripts/keys-new.ts       kulcsgenerálás
 scripts/sign.ts           próbalink aláírása
 secrets/                  gitignore-olt (apps.local.json, apps.prod.json)
 test/                     docker nélküli tesztek (pnpm test); fixtures/apps.test.json: CSAK TESZT kulcsok
+test/docker/              docker-integrációs teszt (pnpm media-server:test), lásd alább
 ```
 
 ## Kérés útja (terv 4.4)
@@ -55,6 +56,16 @@ docker compose down
 
 A `sign` relatív útvonalai (`--apps`) az `server`-hez képest értendők. Negatív `--ttl` csak `=`-vel
 (`--ttl=-10`).
+
+## Docker-integrációs teszt
+
+`pnpm media-server:test` (= `pnpm --filter @workspace/media-server test:docker`; a sima `pnpm test` nem futtatja).
+A `test/docker/setup.ts` a `test/.tmp/docker-*/root` alá szintetikus teszt-gyökeret ír (ffmpeg-gel generált 2 s-os
+MP4 / M4A / JPG, magolt bináris, ritka 40 MiB-os fájl, szintetikus `_content/<v>.json.gz`; valódi tananyag nem), és
+a konténert egyedi projektnévvel (`media-server-test-<pid>-<rand>`), szabad loopback-porttal és szabad
+`172.29.<n>.0/24` alhálózattal indítja a `test/fixtures/apps.test.json` kulcsaival; a végén `down -v`, és az
+ideiglenes könyvtár törlődik. Docker (futó démon), `docker compose` vagy ffmpeg hiányában a spec üzenettel kihagy.
+Megszakított futás után a maradék: `docker compose ls` → `docker compose -p <név> down -v`, `rm -r test/.tmp`.
 
 ## Élesítés (media-host)
 

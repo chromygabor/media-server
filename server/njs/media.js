@@ -405,6 +405,41 @@ function corsOrigin(r) {
   }
 }
 
+/** A sikeres választ adó állapotok: csak ezeken jár a böngésző-cache (terv 4.2, 4.4). */
+var CACHEABLE_STATUS = { 200: true, 206: true, 304: true };
+var CORS_EXPOSE = 'Content-Length, Content-Range, Accept-Ranges';
+var CORS_METHODS = 'GET, HEAD, OPTIONS';
+var CORS_HEADERS = 'Range, If-Range';
+var CORS_MAX_AGE = '600';
+
+/**
+ * A fő location válaszfejlécei (js_header_filter; terv 4.4). BEÁLLÍT, nem hozzáfűz: a 416-ot az nginx a
+ * fejlécszűrők második futásával küldi (a range-szűrő a 200-as fejlécek után dönt), így az `add_header … always`
+ * minden fejlécet kétszer írt ki, és a Cache-Control a 200-asé maradt (WP3-ban talált hiba). Itt a második futás
+ * a már meglévő értéket írja felül, és a Cache-Control a tényleges állapotból számol.
+ */
+function headers(r) {
+  try {
+    var h = r.headersOut;
+    h['X-Content-Type-Options'] = 'nosniff';
+    h['Content-Disposition'] = 'inline';
+    h['Cross-Origin-Resource-Policy'] = corp(r);
+    h['Cache-Control'] = hasOwn(CACHEABLE_STATUS, String(r.status)) ? cache(r) : CACHE_NONE;
+    h['Vary'] = 'Origin';
+    var origin = corsOrigin(r);
+    if (origin !== '') {
+      h['Access-Control-Allow-Origin'] = origin;
+      h['Access-Control-Expose-Headers'] = CORS_EXPOSE;
+      h['Access-Control-Allow-Methods'] = CORS_METHODS;
+      h['Access-Control-Allow-Headers'] = CORS_HEADERS;
+      h['Access-Control-Max-Age'] = CORS_MAX_AGE;
+    }
+    // oxlint-disable-next-line no-unused-vars
+  } catch (e) {
+    // Kivétel nem mehet az error_logba (a kérés-sorban a token); a fejlécek nélkül is biztonságos a válasz.
+  }
+}
+
 /** Érvénytelen token: a 403 a content-fázisban, hogy a @denied location limit_req-je előtte lefusson. */
 function denied(r) {
   r.headersOut['Content-Type'] = 'text/plain';
@@ -424,6 +459,8 @@ export default {
   cache: cache,
   corp: corp,
   corsOrigin: corsOrigin,
+  // nginx (js_header_filter)
+  headers: headers,
   // nginx (js_content)
   denied: denied,
   // tesztekhez

@@ -26,6 +26,8 @@ export interface NjsRequest {
   variables: { request_uri: string; request_id: string };
   headersIn: Record<string, string | undefined>;
   headersOut?: Record<string, string | undefined>;
+  /** A válasz állapota (js_header_filter). */
+  status?: number;
   return?(status: number, body?: string): void;
 }
 
@@ -41,6 +43,7 @@ declare const media: {
   cache(r: NjsRequest): string;
   corp(r: NjsRequest): string;
   corsOrigin(r: NjsRequest): string;
+  headers(r: NjsRequest): void;
   denied(r: NjsRequest): void;
   verify(rawRequestUri: string, apps: Readonly<Record<string, AppConfig>>, now: number): VerifyResult;
   validateApps(apps: unknown): string[];

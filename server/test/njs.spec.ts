@@ -289,6 +289,33 @@ describe('nginx-bekötés (js_set, előtöltött apps)', () => {
     expect([m.status(bad), m.reason(bad), m.corsOrigin(bad)]).toEqual(['403', 'internal-error', '']);
   });
 
+  it('headers (js_header_filter): beállít, nem hozzáfűz; Cache-Control a tényleges állapotból', async () => {
+    const m = await load(fixture);
+    const uri = sign('elearning', 't/lessons/ch-01-l01/m01.720p.mp4', { u: 'user-1' });
+    const run = (status: number, origin?: string): Record<string, string | undefined> => {
+      const r: NjsRequest = { ...req(uri, origin), headersOut: {}, status };
+      m.headers(r);
+      m.headers(r); // a 416-nál a fejlécszűrők kétszer futnak: ugyanaz az eredmény
+      return r.headersOut ?? {};
+    };
+    for (const st of [200, 206, 304]) expect(run(st)['Cache-Control']).toBe('private, max-age=3600');
+    for (const st of [416, 503, 405, 204]) expect(run(st)['Cache-Control']).toBe('no-store');
+    expect(run(200)).toEqual({
+      'X-Content-Type-Options': 'nosniff',
+      'Content-Disposition': 'inline',
+      'Cross-Origin-Resource-Policy': 'same-site',
+      'Cache-Control': 'private, max-age=3600',
+      Vary: 'Origin',
+    });
+    expect(run(206, 'http://localhost:3000')).toMatchObject({
+      'Access-Control-Allow-Origin': 'http://localhost:3000',
+      'Access-Control-Expose-Headers': 'Content-Length, Content-Range, Accept-Ranges',
+      'Access-Control-Allow-Methods': 'GET, HEAD, OPTIONS',
+      'Access-Control-Allow-Headers': 'Range, If-Range',
+      'Access-Control-Max-Age': '600',
+    });
+  });
+
   it('denied: 403, rövid szöveges törzs', async () => {
     const m = await load(fixture);
     const calls: unknown[] = [];
