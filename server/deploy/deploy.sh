@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # A médiaszerver telepítése a szerverre (terv 7.3; implementációs terv WP4).
 #
-#   server/deploy/deploy.sh [--dry-run]          (gyökérből: pnpm media-server:deploy [--dry-run])
+#   server/deploy/deploy.sh [--dry-run]                     (gyökérből: pnpm server:deploy [--dry-run])
 #
 # 1. Előfeltételek: helyben rsync + ssh és a forrásfájlok; a szerveren a DEPLOY_DIR létezik és írható, megvan a
 #    .env és a secrets/apps.json, a .env MEDIA_ROOT / APPS_JSON útvonala létezik, a docker compose elérhető.

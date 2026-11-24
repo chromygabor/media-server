@@ -4,3 +4,6 @@ secrets/*
 !secrets/README.md
 test/.tmp/
 logs/
+
+# Generált szintetikus mintamédia (pnpm dev-media; WP42)
+dev-media/

@@ -1,8 +1,8 @@
 import { fileURLToPath } from 'node:url';
 import { defineConfig } from 'vitest/config';
 
-// A docker-integrációs teszt (implementációs terv WP3): `pnpm --filter @workspace/media-server test:docker`
-// (gyökérből: `pnpm media-server:test`). A sima `pnpm test` ezt nem futtatja (../../vitest.config.ts).
+// A docker-integrációs teszt (implementációs terv WP3): `pnpm --filter @chromygabor/media-server test:docker`
+// (gyökérből: `pnpm test:docker`). A sima `pnpm test` ezt nem futtatja (../../vitest.config.ts).
 export default defineConfig({
   root: fileURLToPath(new URL('../..', import.meta.url)),
   test: {

@@ -1,0 +1,16 @@
+node_modules/
+dist/
+coverage/
+*.tgz
+*.tsbuildinfo
+.env
+.env.*
+!.env.example
+.DS_Store
+
+# Titkok: kulcs soha nem kerül a repóba (a server/.gitignore is kizárja; ez a második védvonal).
+**/secrets/*
+!server/secrets/README.md
+
+# Generált szintetikus mintamédia (pnpm dev-media)
+server/dev-media/

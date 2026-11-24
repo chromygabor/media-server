@@ -1,13 +1,13 @@
 # @chromygabor/media-sdk
 
-A védett médiaszerver (`server`) kliensoldala: aláírt URL (Bunny V2 directory-token, IP-kötés nélkül,
+A védett médiaszerver (`server/` ebben a repóban) kliensoldala: aláírt URL (Bunny V2 directory-token, IP-kötés nélkül,
 `kid` és `u` kiegészítéssel), ellenőrzés, útvonal-szabályok, közös tesztvektorok. Futásidejű függőség nincs
 (`node:crypto`).
 
 - **A protokoll normatív leírása: [`SPEC.md`](SPEC.md)** (URL-alak, token, státuszkódok, fejlécek, `apps.json`,
   kulcsforgatás, feltöltés, ajánlott env-nevek). Az indoklás: a terv 4.
 - Fogyasztók a monorepóban: a backend (URL-aláíró, tartalomforrás, a tesztjei a
-  `./testing`-gel), a frontend e2e (`./testing`) és a médiaszerver tesztjei; a gyökér `pnpm media-server:keys` / `:sign` a csomag parancsait hívja.
+  `./testing`-gel), a frontend e2e (`./testing`) és a médiaszerver tesztjei; a szerver repójának gyökerében a `pnpm keys` / `pnpm sign` a csomag parancsait hívja.
 
 ```
 /bcdn_token=HS256-<sig>&kid=<kid>&token_path=<kódolt előtag>[&u=<uuid>]&expires=<unix>/<app>/<assetKey>
@@ -41,8 +41,8 @@ Két egyenrangú kulcsmodell, appenként és `kid`-enként választható:
 - **HMAC (HS256, Bunny-kompatibilis):** az üzemeltető generálja a kulcsot (`media-keys <app>`), és titkosított
   csatornán adja át; a lépések lent.
 
-1. **Kulcs**: `media-keys <app> [--content] [--kid <id>] [--write <apps.json>] [--dir <könyvtár>]` (a monorepóban
-   `pnpm media-server:keys …`). Kiírja az `apps.json`-részletet és a backend env-értékeit (SPEC 9.); `--write`-tal
+1. **Kulcs**: `media-keys <app> [--content] [--kid <id>] [--write <apps.json>] [--dir <könyvtár>]` (a szerver repójában
+   `pnpm keys …`). Kiírja az `apps.json`-részletet és a backend env-értékeit (SPEC 9.); `--write`-tal
    hozzáadja a fájlhoz (meglévő `kid`-et nem ír felül). A kulcs titok. Próbalink: `media-sign --apps <apps.json>
    <app> <assetKey> [--u <uuid>] [--content] [--base <url>]` (üzemeltető), vagy az app a saját env-jéből:
    `media-sign --env | --env-file <.env> <assetKey>`. Programból: `@chromygabor/media-sdk/apps-config`
@@ -80,7 +80,7 @@ Két egyenrangú kulcsmodell, appenként és `kid`-enként választható:
    szabályaival dönt (ellenőrzési sorrend és státuszkódok, kiterjesztés-tábla, `Range`, CORS, a SPEC 5. fejlécei), a
    fájlt a `<root>/<dir>/<assetKey>`-ből adja; a `testKeys` a közös tesztvektorok CSAK TESZT kulcsai egy kész
    `apps.json`-nal. Korlátok (`429`, `503`) és napló nincs benne: azt a valódi szerver docker-tesztje fedi
-   (`pnpm media-server:test`). Ha a tesztelt oldal és a hamis szerver hosztja eltér (pl. az oldal `localhost`, a
+   (`pnpm test:docker`). Ha a tesztelt oldal és a hamis szerver hosztja eltér (pl. az oldal `localhost`, a
    média `127.0.0.1`), a CORP `same-site` alapértéke miatt a böngésző (Chrome) a választ blokkolja: ilyenkor a
    teszt-`apps.json`-ba `corp: "cross-origin"` kell (`testAppsFile({ corp: 'cross-origin' })`).
 

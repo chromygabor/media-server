@@ -1,5 +1,5 @@
 {
-  "name": "@workspace/media-server",
+  "name": "@chromygabor/media-server",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -7,12 +7,11 @@
     "test": "vitest run",
     "test:docker": "vitest run --config test/docker/vitest.docker.config.ts",
     "lint": "oxlint --type-aware test/ njs/",
-    "typecheck": "tsc --noEmit"
-  },
-  "dependencies": {
-    "@chromygabor/media-sdk": "workspace:*"
+    "typecheck": "tsc --noEmit",
+    "dev-media": "bash scripts/make-test-video.sh ./dev-media 1"
   },
   "devDependencies": {
+    "@chromygabor/media-sdk": "workspace:*",
     "@types/node": "^24.0.0",
     "fast-check": "^4.10.2",
     "oxlint": "^1.58.0",
