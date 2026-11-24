@@ -1,6 +1,6 @@
 // A médiaszerver token-ellenőrzése (terv 4.1–4.4; implementációs terv WP2).
-// A `@workspace/media-token` `verifySignedPath`-jának önálló megvalósítása: ugyanarra a nyers kérés-URI-ra
-// ugyanazt a `status`-t és `reason`-t adja (közös vektorok: @workspace/media-token/test-vectors.json,
+// A `@chromygabor/media-sdk` `verifySignedPath`-jának önálló megvalósítása: ugyanarra a nyers kérés-URI-ra
+// ugyanazt a `status`-t és `reason`-t adja (közös vektorok: @chromygabor/media-sdk/test-vectors.json,
 // teszt: ../test/njs.spec.ts). Az njs 1.0.2 alapmotorja (`njs`) ÉS a Node alatt is futnia kell, ezért szűk
 // JS-részhalmaz: nincs destrukturálás, spread, class, for…of, Buffer; csak `crypto.createHmac` és string-műveletek.
 //
@@ -243,7 +243,9 @@ function validateApps(obj) {
       continue;
     }
     if (typeof a.dir !== 'string' || !isSafeDir(a.dir)) errors.push(at + '.dir: érvénytelen könyvtár');
-    var kids = {};
+    // Prototípus nélküli halmaz: egy sima objektumon a `kids['__proto__'] = true` a prototípust állítaná, saját
+    // mezőt nem, és a `__proto__` kid ütközése elveszne (javítási terv P16).
+    var kids = Object.create(null);
     var maps = ['keys', 'contentKeys'];
     for (var m = 0; m < maps.length; m++) {
       var map = a[maps[m]];
@@ -258,7 +260,7 @@ function validateApps(obj) {
         if (typeof map[kid] !== 'string' || !KEY_RE.test(map[kid])) {
           errors.push(at + '.' + maps[m] + '["' + kid + '"]: a kulcs nem legalább 43 jeles base64(url) szöveg');
         }
-        if (hasOwn(kids, kid)) errors.push(at + ': a kid a keys-ben és a contentKeys-ben is szerepel: ' + kid);
+        if (kid in kids) errors.push(at + ': a kid a keys-ben és a contentKeys-ben is szerepel: ' + kid);
         kids[kid] = true;
       }
     }
@@ -426,6 +428,9 @@ function headers(r) {
     h['Cross-Origin-Resource-Policy'] = corp(r);
     h['Cache-Control'] = hasOwn(CACHEABLE_STATUS, String(r.status)) ? cache(r) : CACHE_NONE;
     h['Vary'] = 'Origin';
+    // RFC 9110: a 405 megnevezi az engedett metódusokat (D100). A `return 405` a fő location-ben van, a szűrő
+    // lefut rá; `add_header` nincs, így a 416-os kettőzés sem jöhet vissza.
+    if (r.status === 405) h['Allow'] = CORS_METHODS;
     var origin = corsOrigin(r);
     if (origin !== '') {
       h['Access-Control-Allow-Origin'] = origin;

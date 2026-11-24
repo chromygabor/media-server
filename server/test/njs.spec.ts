@@ -331,6 +331,9 @@ describe('nginx-bekötés (js_set, előtöltött apps)', () => {
     };
     for (const st of [200, 206, 304]) expect(run(st)['Cache-Control']).toBe('private, max-age=3600');
     for (const st of [416, 503, 405, 204]) expect(run(st)['Cache-Control']).toBe('no-store');
+    // D100 (WP39): a 405 megnevezi az engedett metódusokat, más állapot nem kap Allow-t.
+    expect(run(405).Allow).toBe('GET, HEAD, OPTIONS');
+    for (const st of [200, 206, 204, 403, 416]) expect(run(st).Allow).toBeUndefined();
     expect(run(200)).toEqual({
       'X-Content-Type-Options': 'nosniff',
       'Content-Disposition': 'inline',

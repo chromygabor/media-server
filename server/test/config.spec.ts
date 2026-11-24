@@ -108,6 +108,9 @@ describe('apps.json-validálás: njs validateApps = media-sdk validateAppsFile (
     ['nem szöveg kulcs', { app1: app({ keys: { a: 42 } }) }],
     ['három =', { app1: app({ keys: { a: `${K}===` } }) }],
     ['kid-ütközés', { app1: app({ keys: { a: K }, contentKeys: { a: K } }) }],
+    // P16 (javítási terv WP39): a `__proto__` kid saját mezőként (JSON.parse) mindkét térképben; az njs kid-halmaza
+    // prototípus nélküli, különben a `kids['__proto__'] = true` a prototípust állítaná, és az ütközés elveszne.
+    ['__proto__ kid-ütközés', JSON.parse(`{"app1":{"dir":"app1","keys":{"__proto__":"${K}"},"contentKeys":{"__proto__":"${K}"}}}`)],
     ['érvénytelen kid', { app1: app({ keys: { 'a&b': K } }) }],
     ['túl hosszú kid', { app1: app({ keys: { ['k'.repeat(129)]: K } }) }],
     ['hiányzó keys', { app1: app({ keys: undefined }) }],
@@ -129,6 +132,11 @@ describe('apps.json-validálás: njs validateApps = media-sdk validateAppsFile (
     const r = both(apps);
     expect(r.njs).toBeGreaterThan(0);
     expect(r.sdk).toBe(r.njs);
+  });
+
+  it('__proto__ kid a keys-ben és a contentKeys-ben: mindkettő pontosan egy hibát ad (P16)', () => {
+    const apps: unknown = JSON.parse(`{"app1":{"dir":"app1","keys":{"__proto__":"${K}"},"contentKeys":{"__proto__":"${K}"}}}`);
+    expect(both(apps)).toEqual({ njs: 1, sdk: 1 });
   });
 
   it('engedett változatok: dir "." és több szegmens, közös dir, üres kulcstérképek, origins / corp nélkül', () => {

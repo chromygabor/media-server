@@ -214,17 +214,24 @@ if (!ready) {
       expect(r.stdout + r.stderr).toContain('nem olvasható JSON');
       expect(r.stdout + r.stderr).not.toContain(secret.slice(0, 12));
     };
+    // P16 (WP39): a `__proto__` kid a keys-ben és a contentKeys-ben is → ütközés, mindkét motoron (prototípus nélküli halmaz).
+    it.each(['njs', 'QuickJS'])('check-apps.js: __proto__ kid-ütközés → hiba (%s motor)', async (engine) => {
+      const K = 'A'.repeat(43);
+      const apps = `{"x":{"dir":"x","keys":{"__proto__":"${K}"},"contentKeys":{"__proto__":"${K}"}}}`;
+      expect((await exec(['sh', '-c', 'cat > /tmp/proto-apps.json'], apps)).code).toBe(0);
+      const r = await exec(['njs', '-n', engine, '-q', '-m', '-p', '/etc/nginx/njs', '/etc/nginx/njs/check-apps.js', '/tmp/proto-apps.json']);
+      expect(r.code).not.toBe(0);
+      expect(r.stdout + r.stderr).toContain('a kid a keys-ben és a contentKeys-ben is szerepel: __proto__');
+    });
+
+    // A QuickJS `JSON.parse`-üzenete a bemenetből idéz (`unexpected token: '<kulcs>'`); a WP39 óta a check-apps.js az
+    // `e.message`-et nem írja ki (javítási terv P10).
     it.each([
       ['alapértelmezett (deploy.sh)', []],
       ['njs', ['-n', 'njs']],
+      ['QuickJS', ['-n', 'QuickJS']],
     ])('check-apps.js: szintaktikailag hibás fájl → a kimenetben nincs a kulcsszerű szöveg (%s motor)', async (_name, engineArgs) => {
       await checkBroken(engineArgs);
-    });
-    // ISMERT HIBA, a WP39 javítja (javítási terv P10): a QuickJS `JSON.parse`-üzenete idéz a bemenetből
-    // (`unexpected token: '<kulcs>'`), és a check-apps.js 16. sora ezt kiírja. A javítás njs-változás (deploy kell),
-    // ezért itt `it.fails`; a WP39 után (`'nem olvasható JSON'` az `e.message` nélkül) sima `it`-re fordítandó.
-    it.fails('check-apps.js: szintaktikailag hibás fájl → a kimenetben nincs a kulcsszerű szöveg (QuickJS motor; WP39)', async () => {
-      await checkBroken(['-n', 'QuickJS']);
     });
 
     it.each(['njs', 'QuickJS'])('a közös vektorok a konténer njs CLI-jén (%s motor)', async (engine) => {
@@ -424,8 +431,10 @@ if (!ready) {
       expect((await get(signed(`${LESSON}nincs.mp4`))).status).toBe(404);
     });
 
-    it('POST → 405', async () => {
-      expect((await get(signed(`/${FILES.video}`), { method: 'POST' })).status).toBe(405);
+    it('POST → 405, Allow: GET, HEAD, OPTIONS (D100)', async () => {
+      const r = await get(signed(`/${FILES.video}`), { method: 'POST' });
+      expect(r.status).toBe(405);
+      expect(r.headers.allow).toBe('GET, HEAD, OPTIONS');
     });
   });
 
