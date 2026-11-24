@@ -23,18 +23,27 @@ sig = Base64URL(HMAC-SHA256(kulcs, token_path + expires + "kid=…&token_path=�
 2. **`apps.json`-bejegyzés és feltöltő kulcs**: `dir`, `keys`, `contentKeys`, `origins`, `corp` (SPEC 6.), és egy
    `rrsync`-re korlátozott `authorized_keys`-sor az app könyvtárára (SPEC 8.). Lépésről lépésre:
    [`server/README.md`](../../server/README.md) „Feltöltő kulcs és új app”.
-3. **URL-aláírás a backendben** *(WP34 után)*: `createUrlSigner(…)` (lejárat `min(tokenExp, most + maxTtl)`,
-   könyvtár-token, `?v=`, útvonal-szűrés). Addig: `buildSignedPath` közvetlenül, mintának a backend
-   (vázlat):
+3. **URL-aláírás a backendben**: `createUrlSigner(…)`. A böngészős link egy könyvtár-tokennel készül a hatókörre
+   (lejárat `min(tokenExp, most + maxTtl)`, `?v=` a `sha256`-ból, `_`/hatókör/biztonság/kiterjesztés-szűrés); ami nem
+   írható alá, az ok-kódként jön vissza (`SignRefusal`), naplózás nincs. A backend adapterje mintának:
+   URL-aláírója.
 
    ```ts
-   import { buildSignedPath } from '@chromygabor/media-sdk';
-   const path = `/${app}/${assetKey}`;
-   const url = baseUrl + buildSignedPath({
-     key: keys[kid], kid, u: userId, expires,
-     tokenPath: `/${app}/${scopeDir}`,   // böngészős token: könyvtár, `/`-re végződik (pl. a lecke könyvtára)
-     path,
+   import { createUrlSigner } from '@chromygabor/media-sdk';
+   const signer = createUrlSigner({ baseUrl, app, kid, key, maxTtlSeconds: 3600, contentKid, contentKey });
+
+   // Böngészős linkek egy hatókör-könyvtárra (pl. a lecke könyvtára, `/`-re végződik):
+   const { expiresAt, results } = signer.signDirectory({
+     scopeDir: 't/lessons/ch-01-l01/', userId, tokenExp,   // tokenExp: a munkamenet lejárata (unix mp) vagy null
+     assets: [{ assetKey: 't/lessons/ch-01-l01/m01.720p.mp4', sha256 }],
    });
+   for (const r of results) {
+     if ('url' in r) use(r.url, expiresAt);
+     else log(r.error);   // 'reserved' | 'out-of-scope' | 'unsafe' | 'unsupported-type' | 'bad-scope' | 'rejected'
+   }
+
+   // Tartalomkiadás (tartalomkulccsal, /<app>/_content/<v>.json.gz, 5 perc):
+   const content = signer.signContentFile('2026.11.23-1');   // { url, expiresAt } vagy { error }
    ```
 
 4. **Teszt** *(WP35 után)*: `startFakeMediaServer(…)` a `@chromygabor/media-sdk/testing`-ből. Addig: a backend hamis szervere
@@ -53,6 +62,8 @@ sig = Base64URL(HMAC-SHA256(kulcs, token_path + expires + "kid=…&token_path=�
 | `bucketExpires(now, { hours = 6 })` | az óra eleje + 6 óra (próbalinkekhez) |
 | `isSafeSegment`, `isSafeMediaPath`, `isSafeTokenPath`, `isPrefixOf`, `classifyMediaPath` | útvonal-szabályok (SPEC 2.1, 3.) |
 | `MEDIA_CONTENT_TYPES`, `CONTENT_DIR`, `CONTENT_FILE_EXT`, `CONTENT_FILE_TYPE` | kiterjesztés-tábla (SPEC 3.) |
+| `createUrlSigner({ baseUrl, app, kid?, key?, maxTtlSeconds?, contentKid?, contentKey?, contentTtlSeconds?, now? })` | URL-aláíró: `signDirectory(…)` (böngészős linkek egy hatókörre) és `signContentFile(version)` (tartalom-token); az elutasítás ok-kódja `SignRefusal` |
+| `MEDIA_URL_VERSION_LENGTH`, `CONTENT_TOKEN_TTL_SECONDS` | a `?v=` hossza (12) és a tartalom-token alap-élettartama (300 mp) |
 | `base64url`, `timingSafeEqualStr` | segédek |
 
 ## Közös tesztvektorok

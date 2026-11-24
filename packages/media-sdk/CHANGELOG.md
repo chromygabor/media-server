@@ -11,6 +11,13 @@ változatlansága a `test-vectors.json` vektoraival ellenőrzött; ennek megtör
   hatókört a repó tulajdonosához köti). A könyvtár marad `packages/media-sdk`; a felület és a vektorok változatlanok.
 
 ### Új
+- `createUrlSigner()` (`src/signer.ts`; csomagterv WP34): `signDirectory()` böngészős linkekre
+  egy hatókör-könyvtárra (könyvtár-token, `expires = min(tokenExp, most + maxTtlSeconds)`, `?v=` a `sha256` első 12
+  jeléből, `_`/hatókör/biztonság/kiterjesztés-szűrés) és `signContentFile()` a tartalomkiadásra (tartalomkulcs,
+  fájlra szóló `token_path`, most + `contentTtlSeconds`, alapból 300). Naplózás nincs: az elutasítás ok-kódja
+  `SignRefusal` (`reserved`, `out-of-scope`, `unsafe`, `unsupported-type`, `bad-scope`, `rejected`). Új konstansok:
+  `MEDIA_URL_VERSION_LENGTH`, `CONTENT_TOKEN_TTL_SECONDS`. A fogyasztó backend URL-aláírója és tartalomforrása erre
+  épül.
 - `KEY_ID_RE`, `KEY_RE`, `isValidKeyId()`, `isValidKey()` (`src/keys.ts`; csomagterv WP32): a
   `kid` és a kulcs alakja, bájtra azonosan a médiaszerver njs `ID_RE`-jével és `KEY_RE`-jével. A backend env-sémája
   ezeket használja; a backend `MEDIA_CONTENT_TYPES`-másolata helyett a csomag táblája.

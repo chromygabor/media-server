@@ -34,5 +34,15 @@ export {
 } from './path.js';
 export type { MediaKind, MediaPathInfo } from './path.js';
 export { KEY_ID_RE, KEY_RE, isValidKey, isValidKeyId } from './keys.js';
+export { CONTENT_TOKEN_TTL_SECONDS, MEDIA_URL_VERSION_LENGTH, createUrlSigner } from './signer.js';
+export type {
+  SignAsset,
+  SignDirectoryInput,
+  SignDirectoryOutput,
+  SignRefusal,
+  SignResult,
+  UrlSigner,
+  UrlSignerConfig,
+} from './signer.js';
 export { bucketExpires } from './expires.js';
 export type { BucketOptions } from './expires.js';
