@@ -1,20 +1,14 @@
-// A konfigfájlok összhangja (implementációs terv WP2 7.): a kiterjesztés-tábla a backend MEDIA_CONTENT_TYPES-ának
-// itt tartott másolatával egyezik (a backendből nem importálunk); a compose minden változója a .env.example-ben;
-// rögzített image; a napló nem tartalmazhat tokent.
+// A konfigfájlok összhangja (implementációs terv WP2 7.; csomagterv WP32): a kiterjesztés-tábla és a kulcs-regexek
+// a `@cry/media-sdk`-é (a backend is onnan importál); a compose minden változója a .env.example-ben; rögzített image;
+// a napló nem tartalmazhat tokent.
 
 import { readFileSync } from 'node:fs';
-import { MEDIA_CONTENT_TYPES as TOKEN_TYPES, CONTENT_FILE_TYPE } from '@cry/media-sdk';
+import { CONTENT_FILE_TYPE, KEY_ID_RE, KEY_RE, MEDIA_CONTENT_TYPES, isValidKey, isValidKeyId } from '@cry/media-sdk';
+import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 import media from '../njs/media.js';
 
 const read = (rel: string): string => readFileSync(new URL(`../${rel}`, import.meta.url), 'utf8');
-
-/** A backend táblájának MÁSOLATA: a fogyasztó backend media-store-ja `MEDIA_CONTENT_TYPES` (terv 4.4, P7). */
-const BACKEND_MEDIA_CONTENT_TYPES = {
-  '.mp4': 'video/mp4',
-  '.m4a': 'audio/mp4',
-  '.jpg': 'image/jpeg',
-};
 
 const compose = read('compose.yaml');
 const envExample = read('.env.example');
@@ -22,9 +16,8 @@ const nginxConf = read('nginx/nginx.conf');
 const mediaConf = read('nginx/media.conf');
 
 describe('kiterjesztés-tábla', () => {
-  it('njs = media-sdk = a backend másolata', () => {
-    expect(media.MEDIA_CONTENT_TYPES).toEqual(BACKEND_MEDIA_CONTENT_TYPES);
-    expect(TOKEN_TYPES).toEqual(BACKEND_MEDIA_CONTENT_TYPES);
+  it('njs = media-sdk', () => {
+    expect(media.MEDIA_CONTENT_TYPES).toEqual(MEDIA_CONTENT_TYPES);
   });
 
   it('az nginx types táblája pontosan ezeket és a .gz-t adja', () => {
@@ -36,7 +29,40 @@ describe('kiterjesztés-tábla', () => {
         .filter((p) => p.length === 2)
         .map(([type, ext]) => [`.${ext}`, type]),
     );
-    expect(table).toEqual({ ...BACKEND_MEDIA_CONTENT_TYPES, '.gz': CONTENT_FILE_TYPE });
+    expect(table).toEqual({ ...MEDIA_CONTENT_TYPES, '.gz': CONTENT_FILE_TYPE });
+  });
+});
+
+describe('kulcs-regexek: njs = media-sdk', () => {
+  const njsSource = read('njs/media.js');
+  /** Az njs `var <név> = /…/<flagek>;` sorának regex-literálja, betű szerint (az njs ezeket nem exportálja). */
+  const njsRegexLiteral = (name: string): string => {
+    const m = new RegExp(`^var ${name} = (/.+/[a-z]*);$`, 'm').exec(njsSource);
+    expect(m, name).not.toBeNull();
+    return m?.[1] as string;
+  };
+
+  it('a KEY_ID_RE az njs ID_RE-je, a KEY_RE az njs KEY_RE-je, bájtra', () => {
+    expect(njsRegexLiteral('ID_RE')).toBe(String(KEY_ID_RE));
+    expect(njsRegexLiteral('KEY_RE')).toBe(String(KEY_RE));
+  });
+
+  // Viselkedési paritás az njs `validateApps`-én át: egy kulcsbejegyzés kid- és kulcshibája pontosan akkor jelenik
+  // meg, amikor a csomag validátora elutasít.
+  const keyChar = fc.constantFrom(...'abcXYZ019+/_-.=& \ná'.split(''));
+  const text = (maxLength: number) => fc.array(keyChar, { maxLength }).map((cs) => cs.join(''));
+  const errorsFor = (kid: string, key: string): string[] =>
+    media.validateApps({ app: { dir: 'app', keys: { [kid]: key }, contentKeys: {} } });
+
+  it('property: validateApps kid- és kulcshibája = !isValidKeyId / !isValidKey', () => {
+    fc.assert(
+      fc.property(fc.oneof(text(140), fc.constant('t2026a')), fc.oneof(text(60), fc.constant('a'.repeat(43))), (kid, key) => {
+        const errors = errorsFor(kid, key);
+        const kidError = errors.some((e) => e.includes('érvénytelen kid'));
+        const keyError = errors.some((e) => e.includes('a kulcs nem legalább 43 jeles'));
+        return kidError === !isValidKeyId(kid) && keyError === !isValidKey(key);
+      }),
+    );
   });
 });
 

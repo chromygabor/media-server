@@ -33,5 +33,6 @@ export {
   isSafeTokenPath,
 } from './path.js';
 export type { MediaKind, MediaPathInfo } from './path.js';
+export { KEY_ID_RE, KEY_RE, isValidKey, isValidKeyId } from './keys.js';
 export { bucketExpires } from './expires.js';
 export type { BucketOptions } from './expires.js';

@@ -11,6 +11,7 @@
 // nem dekódoljuk). Minden idő unix-másodperc.
 
 import { createHmac } from 'node:crypto';
+import { KEY_ID_RE } from './keys.js';
 import { classifyMediaPath, isPrefixOf, isSafeMediaPath, isSafeTokenPath, type MediaKind } from './path.js';
 
 const TOKEN_PREFIX = 'HS256-';
@@ -18,7 +19,7 @@ const TOKEN_PREFIX = 'HS256-';
 const TOKEN_RE = /^HS256-[A-Za-z0-9_-]{43}$/;
 const EXPIRES_RE = /^(0|[1-9][0-9]{0,11})$/;
 /** `kid` és `u`: rövid, URL-biztos azonosító (a `&` és `=` kizárva, így a `signing_data` egyértelmű). */
-const ID_RE = /^[A-Za-z0-9._-]{1,128}$/;
+const ID_RE = KEY_ID_RE;
 const SEGMENT_START = '/bcdn_token=';
 /** A tokenben engedett paraméterek (a `token` és az `expires` mellett); minden más elutasítva. */
 const ALLOWED_PARAMS = ['kid', 'token_path', 'u'] as const;
