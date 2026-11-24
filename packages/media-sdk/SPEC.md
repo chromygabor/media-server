@@ -10,14 +10,14 @@ Minden állítás mögött zárójelben a teszt, amely fedi (a kiemelésig a mon
 | Jel | Teszt |
 | --- | --- |
 | **V** | `test-vectors.json` közös vektorai: a TS (`src/vectors.spec.ts`), az njs Node alatt (`server/test/njs.spec.ts`), az njs a konténer CLI-jén, `njs` és `QuickJS` motorral (`media.docker.spec.ts` „a közös vektorok…”), és a `./testing` hamis szervere HTTP-n (`src/testing/fake-server.spec.ts` „konformancia”); a `verify` vektoroknál a `status` és a `reason` is egyezik |
-| **T** | a csomag saját tesztjei: `src/token.spec.ts`, `src/path.spec.ts`, `src/expires.spec.ts`, `src/token.property.spec.ts` |
+| **T** | a csomag saját tesztjei: `src/token.spec.ts`, `src/path.spec.ts`, `src/expires.spec.ts`, `src/token.property.spec.ts`, `src/signer.spec.ts`, `src/signer.property.spec.ts` |
 | **N** | `server/test/njs.spec.ts` (njs Node alatt: TS-paritás fast-checkkel, `validateApps`, js_set-kimenetek, fejlécszűrő) |
 | **C** | `server/test/config.spec.ts` (konfigfájlok összhangja) |
 | **D** | `server/test/docker/media.docker.spec.ts` (a futó konténer HTTP-n) |
 | **K** | `src/cli/cli.spec.ts` (a `media-keys` / `media-sign` parancs: kulcsgenerálás, próbalink) és `src/apps-config.spec.ts` (`validateAppsFile`) |
 | **P** | a fogyasztó feltöltő eszközének tesztjei |
 
-A teszt nélküli állítás jelölése: *(teszt nélkül)*. Minden idő unix-másodperc.
+A teszt nélküli állítás jelölése: *(teszt nélkül)*, egy fél mondatos indokkal. Minden idő unix-másodperc.
 
 ## 1. URL-alak
 
@@ -55,8 +55,9 @@ signing_data = "kid=<kid>&token_path=<token_path>[&u=<u>]"      (rendezett, kód
   (V: a `sign` vektorok kulcsa base64-szöveg; T)
 - `u` nélkül a `signing_data`-ban nincs `&u=`. (T: „u nélkül nincs u=”)
 - Base64URL: `+` → `-`, `/` → `_`, a záró `=` elhagyva. (T: „base64url”)
-- Az aláírás ellenőrzése **időállandó** összehasonlítással történik. (teszt nélkül: az időállandóság; T csak az
-  eredményt nézi)
+- Az aláírás ellenőrzése **időállandó** összehasonlítással történik. (teszt nélkül: az időállandóság, mert egy
+  időmérő teszt a CI-ban maga volna ingadozó; a token hossza rögzített, így a hossz sem szivárog. T csak az eredményt
+  nézi)
 
 ### 2.1 Két tokenfajta
 
@@ -70,7 +71,8 @@ signing_data = "kid=<kid>&token_path=<token_path>[&u=<u>]"      (rendezett, kód
 
 (V: „helyes könyvtár-token”, „helyes tartalomtoken”, „_content/ böngészős kulccsal”, „böngészős útvonal
 tartalomkulccsal”, „tartalomtoken könyvtár-token_path-szal”, „tartalomtoken u-val”; D: „_content/” blokk.
-A lejárati ajánlások: teszt nélkül.)
+A lejárati ajánlások, ahogy a `createUrlSigner` alkalmazza: T: `src/signer.spec.ts` „expires = min(tokenExp, most +
+maxTtl)…”, „… expires = most + 300”.)
 
 - A `token_path` szabálya (az aláírás **után** nézve): `/<app>/`-pal kezdődik, ahol `<app>` a kért útvonal első
   szegmense (`token-path-app`); biztonságos szegmensekből áll (`token-path-shape`); böngészős tokennél `/`-re végződik,
@@ -78,7 +80,8 @@ A lejárati ajánlások: teszt nélkül.)
   végződő előtag könyvtárat jelent: a `…/ch-01-l0/` nem fedi a `…/ch-01-l01/…`-et. (V: „szomszéd-előtag” esetek,
   „token_path másik appé”, „token_path a gyökér”, „token_path ..-tal”; T: `isPrefixOf`; D: „token_path-on kívül”)
 - A `u` nem titok (olvasható), de aláírt: módosítása `bad-signature`. (V: „u módosítva”; D: „módosított u”)
-- A `kid` egyben a sémaváltás helye: új formátum = új `kid` (külön verzió-paraméter nincs). (teszt nélkül)
+- A `kid` egyben a sémaváltás helye: új formátum = új `kid` (külön verzió-paraméter nincs). (teszt nélkül: konvenció
+  a jövőbeli formátumváltáshoz, ma nincs második séma)
 - Az aláíró (`buildSignedPath`) **csak** a szerver által elfogadható linket írja alá, különben `RangeError`.
   (T: „buildSignedPath … elutasít”; N: aláírt URI-k paritása)
 
@@ -98,7 +101,7 @@ A lejárati ajánlások: teszt nélkül.)
   | `/<app>/_content/<név>.json.gz` (közvetlenül, alkönyvtár nélkül) | `.json.gz` | `application/gzip`, `Content-Encoding` nélkül | tartalom |
 
   A kiterjesztés kis- és nagybetűre érzékeny (`.MP4` → `404`). `_`-os az útvonal, ha az app utáni **első** szegmens
-  `_`-sal kezdődik; mélyebb `_`-os szegmens nem számít *(ez teszt nélkül)*. Más `_`-os könyvtár, `_content/`
+  `_`-sal kezdődik; mélyebb `_`-os szegmens nem számít (T: „csak az app utáni első szegmens számít…”; N: „mélyebb _-os szegmens…”). Más `_`-os könyvtár, `_content/`
   alkönyvtár, `_content/` alatti más fájl (pl. `.mp4`, `.sha256`) és `_content/`-en kívüli `.json.gz` `404`. (V: a `404` esetek; T: `classifyMediaPath`; C: az njs, a media-sdk és az nginx `types` táblája
   egyezik; D: „*.build.json”, „nem engedett kiterjesztés”, „.json.gz nem _content/ alatt”, `Content-Type`-ok)
 - A tábla a csomagban: `MEDIA_CONTENT_TYPES`, `CONTENT_DIR`, `CONTENT_FILE_EXT`, `CONTENT_FILE_TYPE`. (C)
@@ -138,7 +141,7 @@ További HTTP-válaszok a szervertől:
 | nem `GET` / `HEAD` / `OPTIONS` | `405` (D: „POST → 405”) |
 | `200` / `206` / `304` / `416` | az nginx statikus motorja: `Range`, `If-Range`, `If-None-Match`, `ETag`, `Last-Modified`, `HEAD` (D) |
 | érvénytelen token túl gyakran ugyanarról az IP-ről | `429` (5. pont) (D) |
-| felhasználónkénti / appenkénti kapcsolatkorlát túllépve | `503` (D: „limit_conn”; az appenkénti: teszt nélkül) |
+| felhasználónkénti / appenkénti kapcsolatkorlát túllépve | `503` (D: „limit_conn: ugyanazzal az u-val…”, „limit_conn appenként 40…”) |
 
 A hibaválaszok törzse rövid szöveg, `Content-Type: text/plain`: `forbidden\n` (403), `not found\n` (404),
 `expired\n` (410); az ok (`reason`) csak a naplóban van. (D; N: `denied`)
@@ -159,6 +162,11 @@ Sikeres és statikus válaszon (a fő location, a fejlécszűrő **beállít**, 
 (N: „headers (js_header_filter)”, „CORS: csak az app saját originje”; D: „videó: 200 … fejlécek”, „416”, „If-Range”,
 „_content/ … no-store”, „CORS” blokk, „`dir: \".\"` app … CORP”.) A CORS és a CORP az útvonal első szegmenséből
 jön, token-ellenőrzés nélkül (preflighthoz). (N)
+
+A `403` / `404` / `410` / `429` hibaválaszon (a named location-ök, fejlécszűrő nélkül) csak az
+`X-Content-Type-Options: nosniff` és a `Cache-Control: no-store` jár; CORS, CORP és `Vary` **nincs**. A `<video>`,
+`<audio>` és `<img>` ezt nem igényli; a `hls.js` CORS nélkül a `410`-et nem látja, ezért a HLS előtt ez újra
+eldöntendő (D99). (D: „token nélkül → 403, minimális törzs, no-store”; N: `denied`)
 
 - Tömörítés nincs (`Content-Encoding` sosem). (D)
 - Korlátok (kiinduló értékek): `limit_conn` app + `u` szerint 3 (`u` nélkül nem korlátoz), appenként 40;
@@ -198,25 +206,30 @@ pedig minden kérés `403 apps-invalid`. (D: „check-apps.js”; N: „hibás v
 | `corp` (elhagyható) | `same-site` (alapérték), `same-origin` vagy `cross-origin` |
 
 (N: „validateApps” blokk, „dir \".\" → a fájl közvetlenül a /srv/media alatt”, „böngészős token u-val: … fájl a dir
-alatt”; D: „másik app saját linkje”, „`dir: \".\"` app”; C: „apps.json-validálás: njs validateApps = media-sdk
+alatt”, „közös dir…”: két app egy `dir`-en, a CORP és a CORS appenként; D: „másik app saját linkje”, „`dir: \".\"` app”; C: „apps.json-validálás: njs validateApps = media-sdk
 validateAppsFile”, ebben a közös `dir` is.) A csomag a szabályokat a `@chromygabor/media-sdk/apps-config`
 `validateAppsFile()`-jával adja (az elfogadás és a hibák száma az njs-ével azonos).
 
 - Kulcs generálása: 32 véletlen bájt base64url-szövege (43 jel). (K: „media-keys”) Parancs: `media-keys` (a monorepóban
   `pnpm media-server:keys`); programból: `generateKey()` a `./apps-config`-ból.
-- A kulcs titok: **nem szabad** repóba, naplóba, hibaüzenetbe kerülnie. (D: a napló nem tartalmazza a kulcsokat; C: a
-  `.env.example`-ben nincs kulcs; K: a hibás JSON-ú `apps.json` hibaüzenete a fájl szövegét nem idézi, a
-  `validateAppsFile` hibaüzenete kulcsot nem idéz)
+- A kulcs titok: **nem szabad** repóba, naplóba, hibaüzenetbe kerülnie. Kivétel a `media-keys` stdout-ja: az új
+  kulcsot szándékosan kiírja (az `apps.json`-részlet és a backend env-sorai, 9. pont); hibaüzenetbe (stderr) a kulcs
+  soha nem kerül. (D: a napló nem tartalmazza a kulcsokat, „check-apps.js: szintaktikailag hibás fájl…” – a QuickJS-motoros futás ismert hibaként jelölt, a deploy az
+  alapértelmezett `njs` motort használja; C: a
+  `.env.example`-ben nincs kulcs; K: „hibás JSON → hiba a fájl szövege nélkül…”, a `validateAppsFile` hibaüzenete
+  kulcsot nem idéz, „--write: hozzáad és kiírja…”)
 
 ## 7. Kulcsforgatás
 
-Appenként és kulcsfajtánként független. *(teszt nélkül: a menet; a több `kid` egyidejű érvényessége abból következik,
-hogy a kulcsot a `kid` választja ki – V: „rossz kid”)*
+Appenként és kulcsfajtánként független. A több `kid` egyidejű érvényessége, és hogy a régi törlése után a vele
+aláírt link `403 unknown-kid`, az új pedig marad: T: „kulcsforgatás: több kid egyidejűleg”; V: „rossz kid”.
+*(teszt nélkül: a menet, mert üzemeltetési lépéssor – feltöltés, deploy, backend-váltás –, unit-teszttel nem fedhető)*
 
-1. Új `kid` + kulcs az `apps.json`-ba (a régi marad), feltöltés, reload (`deploy`).
+1. Új `kid` + kulcs az `apps.json`-ba (a régi marad), feltöltés és `deploy` (az `apps.json` változásánál a deploy
+   restartol, nem reloadol: az egy fájlként csatolt `apps.json` új inode-ot kap).
 2. Az aláíró (a backend) ráválta az új `kid`-re.
 3. A régi `kid` törölhető, amikor a vele kiadott leghosszabb link is lejárt (böngészős: a backend `MEDIA_URL_MAX_TTL`-je;
-   tartalom: pár perc); újra feltöltés + reload.
+   tartalom: pár perc); újra feltöltés és `deploy` (restart).
 
 Vészhelyzetben a régi kulcs azonnal törölhető: az app minden kiadott linkje `403`, a kliensek újat kérnek; a többi
 app érintetlen.
@@ -227,8 +240,9 @@ A szerver a fájlokat a `dir` alól, csak olvasva adja; a feltöltés rsync ssh-
 a fogyasztó feltöltő eszköze):
 
 - Appenként egy **korlátozott ssh-kulcs** a szerver felhasználójának `authorized_keys`-ében, amely csak `rrsync`-et
-  enged, csak az app könyvtárába; az rsync célja az rrsync gyökere, útvonal nélkül (`<host>:`). *(teszt nélkül;
-  a sor alakja: `server/README.md` „Feltöltő kulcs és új app”)*
+  enged, csak az app könyvtárába; az rsync célja az rrsync gyökere, útvonal nélkül (`<host>:`). *(teszt nélkül:
+  hoszt-konfiguráció, nincs a repóban, a teszthez ssh-szerver és rrsync kellene; a sor alakja:
+  `server/README.md` „Feltöltő kulcs és új app”)*
 
   ```
   restrict,command="/usr/bin/rrsync -munge /srv/media-server/data/<dir>" ssh-ed25519 AAAA… media-upload-<app>

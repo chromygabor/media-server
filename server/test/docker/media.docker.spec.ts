@@ -201,6 +201,32 @@ if (!ready) {
       expect(badRun.stdout + badRun.stderr).not.toContain('rövid');
     });
 
+    // SPEC 6.: a kulcs hibaüzenetbe nem kerülhet. Szintaktikailag hibás fájl, a hiba helyén kulcsszerű szöveggel: a
+    // check-apps.js a `JSON.parse` kivételének üzenetét írja ki, és ez motoronként más. Az alapértelmezett motor (a
+    // deploy.sh hívása, `-n` nélkül) és az `njs` csak a pozíciót adja, a QuickJS a bemenetből idéz.
+    const checkBroken = async (engineArgs: string[]) => {
+      const secret = 'CSAKTESZTszivargasProba0123456789abcdefghijk';
+      const broken = `{"x":{"dir":"x","keys":{"a":${secret}},"contentKeys":{}}}`;
+      expect((await exec(['sh', '-c', 'cat > /tmp/broken-apps.json'], broken)).code).toBe(0);
+      const args = ['njs', ...engineArgs, '-q', '-m', '-p', '/etc/nginx/njs', '/etc/nginx/njs/check-apps.js', '/tmp/broken-apps.json'];
+      const r = await exec(args);
+      expect(r.code).not.toBe(0);
+      expect(r.stdout + r.stderr).toContain('nem olvasható JSON');
+      expect(r.stdout + r.stderr).not.toContain(secret.slice(0, 12));
+    };
+    it.each([
+      ['alapértelmezett (deploy.sh)', []],
+      ['njs', ['-n', 'njs']],
+    ])('check-apps.js: szintaktikailag hibás fájl → a kimenetben nincs a kulcsszerű szöveg (%s motor)', async (_name, engineArgs) => {
+      await checkBroken(engineArgs);
+    });
+    // ISMERT HIBA, a WP39 javítja (javítási terv P10): a QuickJS `JSON.parse`-üzenete idéz a bemenetből
+    // (`unexpected token: '<kulcs>'`), és a check-apps.js 16. sora ezt kiírja. A javítás njs-változás (deploy kell),
+    // ezért itt `it.fails`; a WP39 után (`'nem olvasható JSON'` az `e.message` nélkül) sima `it`-re fordítandó.
+    it.fails('check-apps.js: szintaktikailag hibás fájl → a kimenetben nincs a kulcsszerű szöveg (QuickJS motor; WP39)', async () => {
+      await checkBroken(['-n', 'QuickJS']);
+    });
+
     it.each(['njs', 'QuickJS'])('a közös vektorok a konténer njs CLI-jén (%s motor)', async (engine) => {
       const require = createRequire(import.meta.url);
       const vectors = readFileSync(require.resolve('@chromygabor/media-sdk/test-vectors.json'), 'utf8');
@@ -553,6 +579,28 @@ if (!ready) {
         const other = await open(signed(big, { u: 'conn-masik' }));
         held.push(other);
         expect(other.statusCode).toBe(200);
+      } finally {
+        for (const r of held) r.destroy();
+      }
+    });
+
+    it('limit_conn appenként 40: 40 nyitott kérés (14 u, legfeljebb 3/u) mellett a 41. 503; másik app közben 200', async () => {
+      // A korábbi tesztek bontott kapcsolatait az nginx már elengedte-e: rövid várakozás.
+      await new Promise((r) => setTimeout(r, 500));
+      const held: IncomingMessage[] = [];
+      try {
+        for (let i = 0; i < 40; i++) {
+          // a törzset nem olvassuk: a kapcsolat nyitva marad (a 30 MiB fölött amúgy is fékezve)
+          const r = await open(signed(big, { u: `app-conn-${Math.floor(i / 3)}` }));
+          held.push(r);
+          expect(r.statusCode, `${i + 1}. kérés`).toBe(200);
+        }
+        // Új u (a felhasználónkénti korlát nem érinti): az appenkénti korlát dönt.
+        const over = await get(signed(big, { u: 'app-conn-uj' }), { method: 'HEAD' });
+        expect(over.status).toBe(503);
+        const other = await get(signed(`/${FILES.masik}`, { key: KEY.masik, u: 'app-conn-uj' }));
+        expect(other.status).toBe(200);
+        expect(other.body.equals(local(FILES.masik))).toBe(true);
       } finally {
         for (const r of held) r.destroy();
       }

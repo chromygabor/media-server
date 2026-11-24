@@ -1,4 +1,5 @@
-// media-sign – próbalink aláírása egy apps.json kulcsával (SPEC 1.–3., 6.; csomagterv WP33).
+// media-sign – próbalink aláírása egy apps.json kulcsával (SPEC 1.–3., 6.;
+// csomagterv WP33).
 //
 //   media-sign --apps <apps.json> <app> <assetKey> [--content] [--ttl <mp>] [--kid <id>] [--u <uuid>]
 //              [--prefix <token_path>] [--base <url>]

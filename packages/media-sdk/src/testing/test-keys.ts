@@ -56,8 +56,21 @@ export function testAppsFile(options: TestAppsOptions = {}): AppsFile {
   };
 }
 
-/** CSAK TESZT: a közös tesztvektorok böngészős és tartalomkulcsa, a `test-app` appal. */
-export const testKeys: TestKeys = Object.freeze({
+/** Mély fagyasztás: a közös objektumot egy teszt se írhassa át a többi alatt (a tömböket és a belső objektumokat sem). */
+function deepFreeze<T>(value: T): T {
+  if (value !== null && typeof value === 'object' && !Object.isFrozen(value)) {
+    Object.freeze(value);
+    for (const inner of Object.values(value)) deepFreeze(inner);
+  }
+  return value;
+}
+
+/**
+ * CSAK TESZT: a közös tesztvektorok böngészős és tartalomkulcsa, a `test-app` appal. Mélyen fagyasztott (az `apps` és
+ * benne a `keys` / `contentKeys` is): módosítani nem lehet (szigorú módban `TypeError`); más `apps.json`-hoz a
+ * `testAppsFile()` ad friss, módosítható objektumot.
+ */
+export const testKeys: TestKeys = deepFreeze({
   app: TEST_APP,
   kid: browserVector.params.kid,
   key: browserVector.key,

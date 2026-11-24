@@ -231,6 +231,37 @@ describe('nginx-bekötés (js_set, előtöltött apps)', () => {
     expect(m.corp(r)).toBe('cross-origin');
   });
 
+  it('mélyebb _-os szegmens: csak az app utáni első számít (SPEC 3.), böngészős token, fájl a dir alatt', async () => {
+    const m = await load(fixture);
+    const uri = sign('elearning', 't/_x/m.mp4');
+    const r = req(uri);
+    expect([m.status(r), m.reason(r), m.file(r)]).toEqual(['ok', '', '/elearning/t/_x/m.mp4']);
+    expect(media.verify(uri, fixture, now)).toMatchObject({ ok: true, kind: 'browser', assetKey: 't/_x/m.mp4' });
+    expect(shape(media.verify(uri, fixture, now))).toEqual(shape(verifySignedPath(uri, appLookupFrom(fixture as Record<string, Required<AppConfig>>), now)));
+  });
+
+  it('közös dir (SPEC 6.): két app ugyanazt a fájlt látja, a CORP és a CORS appenként a sajátja, más app kulcsával 403', async () => {
+    const shared: Record<string, Required<AppConfig>> = {
+      egyik: { ...(fixture.elearning as Required<AppConfig>), dir: 'kozos', origins: ['https://egyik.example'], corp: 'same-site' },
+      masodik: { ...(fixture.masik as Required<AppConfig>), dir: 'kozos', origins: ['https://masodik.example'], corp: 'cross-origin' },
+    };
+    expect(media.validateApps(shared)).toEqual([]);
+    const m = await load(shared);
+    const signFor = (app: string, keyApp: string) => {
+      const [kid, key] = Object.entries(shared[keyApp]!.keys)[0] as [string, string];
+      const path = `/${app}/t/a.mp4`;
+      return buildSignedPath({ key, kid, tokenPath: `/${app}/t/`, expires: now + 3600, path });
+    };
+    const a = req(signFor('egyik', 'egyik'), 'https://egyik.example');
+    const b = req(signFor('masodik', 'masodik'), 'https://egyik.example');
+    expect([m.status(a), m.file(a), m.corp(a), m.corsOrigin(a)]).toEqual(['ok', '/kozos/t/a.mp4', 'same-site', 'https://egyik.example']);
+    expect([m.status(b), m.file(b), m.corp(b), m.corsOrigin(b)]).toEqual(['ok', '/kozos/t/a.mp4', 'cross-origin', '']);
+    expect(m.corsOrigin(req(signFor('masodik', 'masodik'), 'https://masodik.example'))).toBe('https://masodik.example');
+    // A másik app kulcsával aláírt link (a kulcsok különböznek): 403.
+    const wrong = req(signFor('masodik', 'egyik'));
+    expect([m.status(wrong), m.reason(wrong), m.file(wrong)]).toEqual(['403', 'bad-signature', '']);
+  });
+
   it('tartalomtoken: ok, no-store', async () => {
     const m = await load(fixture);
     const r = req(sign('elearning', '_content/2026.11.23-1.json.gz', { content: true }));

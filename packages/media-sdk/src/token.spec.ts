@@ -33,7 +33,7 @@ describe('base64url, timingSafeEqualStr', () => {
   });
 });
 
-describe('signToken (terv 4.1)', () => {
+describe('signToken (SPEC 2.)', () => {
   it('üzenet = token_path + expires + rendezett, kódolatlan signing_data (a token_path-szal)', () => {
     const expected = createHmac('sha256', KEY)
       .update(`${DIR}${E}kid=2026a&token_path=${DIR}&u=${U}`)
@@ -110,7 +110,7 @@ describe('parseSignedPath', () => {
   ])('%s → %s', (uri, error) => expect(parseSignedPath(uri)).toEqual({ error }));
 });
 
-describe('verifySignedPath (terv 4.4 sorrend)', () => {
+describe('verifySignedPath (SPEC 4. sorrend)', () => {
   const good = buildSignedPath({ key: KEY, kid: '2026a', u: U, tokenPath: DIR, expires: E, path: FILE });
   it('elfogad, és visszaadja a naplózandó mezőket', () => {
     expect(verifySignedPath(good, apps, E - 10)).toEqual({
@@ -140,5 +140,21 @@ describe('verifySignedPath (terv 4.4 sorrend)', () => {
   it('üres kulcs az apps-ban nem kulcs', () => {
     const empty = appLookupFrom({ elearning: { keys: { '2026a': '' }, contentKeys: {} } });
     expect(verifySignedPath(good, empty, E)).toMatchObject({ status: 403, reason: 'unknown-kid' });
+  });
+});
+
+describe('kulcsforgatás: több kid egyidejűleg (SPEC 7.)', () => {
+  const NEW = 'CSAK-TESZT-kulcs-elearning-2026b';
+  const oldLink = buildSignedPath({ key: KEY, kid: '2026a', u: U, tokenPath: DIR, expires: E, path: FILE });
+  const newLink = buildSignedPath({ key: NEW, kid: '2026b', u: U, tokenPath: DIR, expires: E, path: FILE });
+  it('két böngészős kid: mindkettővel aláírt link érvényes', () => {
+    const both = appLookupFrom({ elearning: { keys: { '2026a': KEY, '2026b': NEW }, contentKeys: {} } });
+    expect(verifySignedPath(oldLink, both, E)).toMatchObject({ ok: true, kid: '2026a' });
+    expect(verifySignedPath(newLink, both, E)).toMatchObject({ ok: true, kid: '2026b' });
+  });
+  it('a régi kid törlése után a vele aláírt link 403 unknown-kid, az új marad', () => {
+    const rotated = appLookupFrom({ elearning: { keys: { '2026b': NEW }, contentKeys: {} } });
+    expect(verifySignedPath(oldLink, rotated, E)).toEqual({ ok: false, status: 403, reason: 'unknown-kid' });
+    expect(verifySignedPath(newLink, rotated, E)).toMatchObject({ ok: true, kid: '2026b' });
   });
 });

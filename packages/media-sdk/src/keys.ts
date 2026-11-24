@@ -1,6 +1,6 @@
-// A kulcsazonosító (`kid`) és a kulcs alakja (terv 4.3; csomagterv WP32). A szabály a
-// médiaszerveren az `server/njs/media.js` `ID_RE`-je és `KEY_RE`-je; az értékek bájtra azonosak (a szerver
-// `test/config.spec.ts`-e a forrásszövegen ellenőrzi). Az eltérés a szerveren `403 apps-invalid`-ot adna.
+// A kulcsazonosító (`kid`) és a kulcs alakja (SPEC 6.; terv 4.3, csomagterv WP32).
+// A szabály a médiaszerveren az `server/njs/media.js` `ID_RE`-je és `KEY_RE`-je; az értékek bájtra azonosak
+// (a szerver `test/config.spec.ts`-e a forrásszövegen ellenőrzi). Az eltérés a szerveren `403 apps-invalid`-ot adna.
 
 /** `kid` (és a token `u` paramétere): rövid, URL-biztos azonosító; a `&` és `=` kizárva (a `signing_data` egyértelmű). */
 export const KEY_ID_RE = /^[A-Za-z0-9._-]{1,128}$/;

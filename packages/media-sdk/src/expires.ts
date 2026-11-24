@@ -1,5 +1,7 @@
-// Vödrözött lejárat (terv 4.2): az aktuális óra eleje + 6 óra, hogy egy órán belül
-// ugyanarra a könyvtárra bájtra azonos URL jöjjön ki (böngésző-cache). Minden idő unix-másodperc.
+// Vödrözött lejárat a próbalinkekhez (a `media-sign` alapja): az aktuális óra eleje + 6 óra, hogy egy órán belül
+// ugyanarra a könyvtárra bájtra azonos URL jöjjön ki. Ez nem a backend lejárati szabálya: az URL-aláíró
+// (`createUrlSigner`) lejárata `min(exp, most + maxTtlSeconds)` (SPEC 2.1). Minden idő unix-másodperc.
+// (terv 4.2, ahol a vödrözés még a lejárat szabálya volt.)
 
 const HOUR = 3600;
 

@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { classifyMediaPath, isPrefixOf, isSafeMediaPath, isSafeTokenPath, MEDIA_CONTENT_TYPES } from './path.js';
+import { appLookupFrom, buildSignedPath, verifySignedPath } from './token.js';
 
-describe('isSafeMediaPath (terv 4.1)', () => {
+describe('isSafeMediaPath (SPEC 3.)', () => {
   it.each([
     '/elearning/t/lessons/ch-01-l01/m01.720p.mp4',
     '/elearning/_content/2026.11.23-1.json.gz',
@@ -36,7 +37,7 @@ describe('isSafeTokenPath', () => {
   );
 });
 
-describe('isPrefixOf (P6)', () => {
+describe('isPrefixOf (SPEC 2.1)', () => {
   it('könyvtár-előtag: csak a könyvtáron belül', () => {
     expect(isPrefixOf('/e/t/lessons/ch-01-l01/', '/e/t/lessons/ch-01-l01/m01.720p.mp4')).toBe(true);
     expect(isPrefixOf('/e/t/lessons/ch-01-l01/', '/e/t/lessons/ch-01-l01/sub/x.mp4')).toBe(true);
@@ -51,8 +52,8 @@ describe('isPrefixOf (P6)', () => {
   it('üres előtag semmit nem fed', () => expect(isPrefixOf('', '/e/x.mp4')).toBe(false));
 });
 
-describe('classifyMediaPath (kiterjesztés-tábla, terv 4.4)', () => {
-  it('a tábla a backend MEDIA_CONTENT_TYPES-ával egyezik (a fogyasztó backend media-store-ja)', () => {
+describe('classifyMediaPath (kiterjesztés-tábla, SPEC 3.)', () => {
+  it('a tábla a SPEC 3. pontja (az njs-sel és az nginx types-szal a szerver config.spec.ts-e veti össze)', () => {
     expect(MEDIA_CONTENT_TYPES).toEqual({ '.mp4': 'video/mp4', '.m4a': 'audio/mp4', '.jpg': 'image/jpeg' });
   });
   it.each([
@@ -62,6 +63,15 @@ describe('classifyMediaPath (kiterjesztés-tábla, terv 4.4)', () => {
     ['/e/_content/2026.11.23-1.json.gz', 'content', 'application/gzip'],
   ])('%s → %s, %s', (p, kind, ctype) => {
     expect(classifyMediaPath(p)).toMatchObject({ app: 'e', kind, contentType: ctype });
+  });
+  it('csak az app utáni első szegmens számít: a mélyebb _-os szegmens böngészős útvonal (SPEC 3.)', () => {
+    expect(classifyMediaPath('/e/t/_x/m.mp4')).toMatchObject({ app: 'e', kind: 'browser', contentType: 'video/mp4' });
+    expect(classifyMediaPath('/e/t/_content/v.json.gz')).toBeNull();
+    // CSAK TESZT kulcs.
+    const key = 'CSAK-TESZT-kulcs-melyebb-alahuzas-0000000000';
+    const link = buildSignedPath({ key, kid: 'k1', tokenPath: '/e/t/', expires: 100, path: '/e/t/_x/m.mp4' });
+    const apps = appLookupFrom({ e: { keys: { k1: key }, contentKeys: {} } });
+    expect(verifySignedPath(link, apps, 50)).toMatchObject({ ok: true, kind: 'browser', assetKey: 't/_x/m.mp4' });
   });
   it('assetKey az app utáni rész', () => {
     expect(classifyMediaPath('/e/t/lessons/ch-01-l01/m01.720p.mp4')?.assetKey).toBe('t/lessons/ch-01-l01/m01.720p.mp4');

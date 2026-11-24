@@ -1,4 +1,4 @@
-// A médiaszerver tokenje (terv 4.1–4.4; implementációs terv WP1).
+// A médiaszerver tokenje (SPEC 1.–4.; terv 4.1–4.4, implementációs terv WP1).
 // Tiszta TS, futásidejű függőség nélkül (`node:crypto`); a közös vektorok: `@chromygabor/media-sdk/test-vectors.json`.
 
 export {

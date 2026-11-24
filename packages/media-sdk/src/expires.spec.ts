@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { bucketExpires } from './expires.js';
 
-describe('bucketExpires (terv 4.2)', () => {
+describe('bucketExpires (próbalink-lejárat)', () => {
   it('óra eleje + 6 óra', () => {
     // 2026-11-23T10:37:12Z → 10:00Z + 6 h = 16:00Z
     const now = Date.UTC(2026, 10, 23, 10, 37, 12) / 1000;

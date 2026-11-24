@@ -38,6 +38,14 @@ változatlansága a `test-vectors.json` vektoraival ellenőrzött; ennek megtör
   `kid` és a kulcs alakja, bájtra azonosan a médiaszerver njs `ID_RE`-jével és `KEY_RE`-jével. A backend env-sémája
   ezeket használja; a backend `MEDIA_CONTENT_TYPES`-másolata helyett a csomag táblája.
 
+### Javítva
+- A `media-keys` / `media-sign` a hibás JSON-ú `apps.json` hibaüzenetében nem idéz a fájl szövegéből (a korábbi
+  `server` szkript a `JSON.parse` üzenetét továbbadta, és a Node ebben a bemenetből, így a kulcsokból is
+  idézett); az üzenet `<fájl>: az apps.json nem érvényes JSON`, legfeljebb sorral és oszloppal.
+- `./testing`: a `testKeys` mélyen fagyasztott (az `apps` és benne a `keys` / `contentKeys` is); korábban csak a
+  felső szint volt, így egy teszt a többi alatt átírhatta a közös teszt-`apps.json`-t.
+- `./testing`: a `requests[].verify` tartás alatti értéke (az érkezéskori eredmény) dokumentálva, teszttel.
+
 ## [0.1.0] – 2026-11-24
 
 ### Változott

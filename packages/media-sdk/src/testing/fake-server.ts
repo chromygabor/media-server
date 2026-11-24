@@ -36,7 +36,9 @@ export interface FakeMediaRequest {
   origin: string | null;
   /**
    * Az ellenőrzés eredménye. Érkezéskor számolva, majd az `override` (késleltetés, visszatartás) után a pillanatnyi
-   * órával újraszámolva: a válasz ez utóbbin múlik. `GET`/`HEAD`-en kívül is kitöltött, de ott nem számít.
+   * órával újraszámolva: a válasz ez utóbbin múlik. **Tartás közben** (amíg a `delayMs` vagy az `override`-függvény
+   * vár, `status` = `0`) tehát még az érkezéskori eredményt mutatja, nem azt, amivel a kérés majd eldől; a végleges
+   * értéket a válasz után (`status` ≠ `0`) érdemes olvasni. `GET`/`HEAD`-en kívül is kitöltött, de ott nem számít.
    */
   verify: VerifyResult | FakeMediaFailure;
   /** A válasz státusza; `0`, amíg nincs válasz. */

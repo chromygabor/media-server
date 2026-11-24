@@ -1,4 +1,4 @@
-// Az URL-aláíró (csomagterv WP34; SPEC 1.–3.): egy app backendje egy hívással kap aláírt
+// Az URL-aláíró (SPEC 1.–3.; csomagterv WP34): egy app backendje egy hívással kap aláírt
 // URL-eket egy hatókör-könyvtár fájljaira (böngészős token), illetve egy tartalomkiadásra (tartalom-token).
 // Naplózás nincs: ami nem írható alá, az ok-kódként (`SignRefusal`) jön vissza; a naplósort a hívó adapterje írja.
 

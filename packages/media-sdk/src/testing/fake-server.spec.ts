@@ -393,6 +393,16 @@ describe('tesztvezérlés', () => {
     expect(seen).toEqual(['bytes=5-']);
   });
 
+  it('requests[].verify: tartás közben az érkezéskori eredmény, a válasz után a későbbi órával számolt', async () => {
+    fake.override = { delayMs: 150 };
+    const pending = get(fake.url, sign(path));
+    await new Promise((r) => setTimeout(r, 50));
+    expect(fake.requests.at(-1)).toMatchObject({ status: 0, verify: { ok: true } });
+    nowMs += 3600 * 1000;
+    expect((await pending).status).toBe(410);
+    expect(fake.requests.at(-1)).toMatchObject({ status: 410, verify: { ok: false, status: 410, reason: 'expired' } });
+  });
+
   it('routes: saját végpont a médiakérések előtt, napló nélkül; close() többször hívható', async () => {
     const res = await get(fake.url, '/__control?x=1');
     expect(res.body.toString()).toBe('vezérlő');
@@ -414,5 +424,26 @@ describe('testKeys', () => {
       mas: { dir: 'm', keys: { '2026a': testKeys.key }, contentKeys: { '2026c': testKeys.contentKey }, origins: ['https://a.test'], corp: 'same-origin' },
     });
     expect(Object.isFrozen(testKeys)).toBe(true);
+  });
+  it('mélyen fagyasztott: az apps és a kulcstérképek módosítása TypeError (a modul szigorú módú)', () => {
+    const apps = testKeys.apps as Record<string, { dir: string; keys: Record<string, string>; contentKeys: Record<string, string> }>;
+    const app = apps['test-app']!;
+    expect(() => {
+      apps['masik'] = { dir: '.', keys: {}, contentKeys: {} };
+    }).toThrow(TypeError);
+    expect(() => {
+      app.dir = 'mas';
+    }).toThrow(TypeError);
+    expect(() => {
+      app.keys['2026x'] = testKeys.key;
+    }).toThrow(TypeError);
+    expect(() => {
+      delete app.contentKeys['2026c'];
+    }).toThrow(TypeError);
+    expect(testKeys.apps).toEqual(testAppsFile());
+    // A testAppsFile() friss, módosítható objektumot ad.
+    const fresh = testAppsFile();
+    fresh['test-app']!.dir = 'mas';
+    expect(fresh['test-app']!.dir).toBe('mas');
   });
 });

@@ -52,7 +52,9 @@ sig = Base64URL(HMAC-SHA256(kulcs, token_path + expires + "kid=…&token_path=�
    szabályaival dönt (ellenőrzési sorrend és státuszkódok, kiterjesztés-tábla, `Range`, CORS, a SPEC 5. fejlécei), a
    fájlt a `<root>/<dir>/<assetKey>`-ből adja; a `testKeys` a közös tesztvektorok CSAK TESZT kulcsai egy kész
    `apps.json`-nal. Korlátok (`429`, `503`) és napló nincs benne: azt a valódi szerver docker-tesztje fedi
-   (`pnpm media-server:test`).
+   (`pnpm media-server:test`). Ha a tesztelt oldal és a hamis szerver hosztja eltér (pl. az oldal `localhost`, a
+   média `127.0.0.1`), a CORP `same-site` alapértéke miatt a böngésző (Chrome) a választ blokkolja: ilyenkor a
+   teszt-`apps.json`-ba `corp: "cross-origin"` kell (`testAppsFile({ corp: 'cross-origin' })`).
 
    ```ts
    import { createUrlSigner } from '@chromygabor/media-sdk';
@@ -98,11 +100,11 @@ sig = Base64URL(HMAC-SHA256(kulcs, token_path + expires + "kid=…&token_path=�
 | Függvény / típus | Mit csinál |
 | --- | --- |
 | `startFakeMediaServer({ apps, root, now?, port?, host?, routes? })` | hamis médiaszerver (`node:http`) a SPEC szabályaival; a fájl `<root>/<dir>/<assetKey>`. Visszaad: `{ url, requests, override, close() }`. Hibás `apps` mellett minden médiakérés `403 apps-invalid`; `/healthz` → `204`, `OPTIONS` → `204`, más metódus `405` |
-| `FakeMediaServer.requests` | a kérések naplója (`method`, `uri`, `path` token nélkül, `expires`, `range`, `origin`, `verify`, `status`) |
+| `FakeMediaServer.requests` | a kérések naplója (`method`, `uri`, `path` token nélkül, `expires`, `range`, `origin`, `verify`, `status`). A `verify` érkezéskor számolódik, és a tartás (`delayMs`, `override`-függvény) után a pillanatnyi órával újra: tartás közben (`status` = `0`) még az érkezéskori eredmény, a válasz után a döntő |
 | `FakeMediaServer.override` | eltérés a szabályos választól: `{ status?, delayMs?, body?, headers?, truncateAt? }`, vagy egy kérésenként hívott (async) függvény – amíg ez vár, a kérés is; a token utána, a pillanatnyi órával dől el |
 | `now` / `routes` | az óra (Unix-ezredmásodperc, mint a `createUrlSigner`-nél) és saját végpontok (pl. egy másik folyamatból hívható vezérlő) |
-| `testKeys` | CSAK TESZT: `{ app: 'test-app', kid, key, contentKid, contentKey, apps }` a közös tesztvektorokból; a `createUrlSigner`-nek szétteríthető |
-| `testAppsFile({ app?, dir?, origins?, corp? })` | ugyanezekkel a kulcsokkal más app-névre, `dir`-re, `origins`-re, `corp`-ra (alapból `dir: '.'`) |
+| `testKeys` | CSAK TESZT: `{ app: 'test-app', kid, key, contentKid, contentKey, apps }` a közös tesztvektorokból; a `createUrlSigner`-nek szétteríthető. Mélyen fagyasztott (az `apps` is), módosítani nem lehet |
+| `testAppsFile({ app?, dir?, origins?, corp? })` | ugyanezekkel a kulcsokkal más app-névre, `dir`-re, `origins`-re, `corp`-ra (alapból `dir: '.'`); friss, módosítható objektum. A `corp: 'cross-origin'` kell, ha az e2e oldal és a hamis szerver hosztja eltér (`localhost` / `127.0.0.1`) |
 
 Parancsok (`bin`): `media-keys` és `media-sign` (`--help`). Az `apps.json` útvonalát argumentumként kapják
 (`--write`, illetve a kötelező `--apps`), alapértelmezett útvonal nincs. A hibás JSON-ú fájl hibaüzenete a fájl

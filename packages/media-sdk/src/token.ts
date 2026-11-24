@@ -1,6 +1,7 @@
 // A médiaszerver tokenje: Bunny V2 directory-token, IP-kötés nélkül, `kid` és `u` kiegészítéssel
-// (terv 4.1; az ellenőrzés sorrendje 4.4). Az algoritmus a Bunny dokumentációját és
-// hivatalos aláíró könyvtárát követi (kód átvétele nélkül); a közös vektorok: ../test-vectors.json.
+// (SPEC 1.–2.; az ellenőrzés sorrendje SPEC 4.; terv 4.1, 4.4). Az algoritmus a
+// Bunny dokumentációját és hivatalos aláíró könyvtárát követi (kód átvétele nélkül); a közös vektorok: a csomag
+// `test-vectors.json`-ja.
 //
 //   token        = "HS256-" + Base64URL(HMAC-SHA256(kulcs, token_path + expires + signing_data))
 //   signing_data = a paraméterek a token és az expires nélkül, a token_path-szal, kulcs szerint rendezve,
@@ -65,7 +66,7 @@ export type ParseError =
   | 'missing-param'
   | 'malformed-param';
 
-/** Egy app kulcsai az `apps.json`-ból (terv 4.3): `kid` → kulcs. */
+/** Egy app kulcsai az `apps.json`-ból (SPEC 6.): `kid` → kulcs. */
 export interface AppKeys {
   keys: Readonly<Record<string, string>>;
   contentKeys: Readonly<Record<string, string>>;
@@ -222,7 +223,7 @@ export function parseSignedPath(rawRequestUri: string): ParsedSignedPath | { err
   };
 }
 
-/** A `token_path` szabálya (terv 4.1): app, alak, kulcsfajta; `null`, ha rendben. */
+/** A `token_path` szabálya (SPEC 2.1): app, alak, kulcsfajta; `null`, ha rendben. */
 function tokenPathProblem(
   tokenPath: string,
   path: string,
@@ -253,7 +254,7 @@ function keyOf(map: Readonly<Record<string, string>> | undefined, kid: string): 
 }
 
 /**
- * Ellenőrzés a terv 4.4 sorrendjében: alak (`403`) → kiterjesztés-tábla (`404`) → app → `kid` →
+ * Ellenőrzés a SPEC 4. sorrendjében: alak (`403`) → kiterjesztés-tábla (`404`) → app → `kid` →
  * kulcsfajta → HMAC (időállandó) → `token_path` → lejárat (`410`, csak hiteles tokenre).
  * A fájl létezését (`404`) a hívó (nginx) nézi. `now` unix-másodperc; lejárt, ha `now > expires`.
  */
