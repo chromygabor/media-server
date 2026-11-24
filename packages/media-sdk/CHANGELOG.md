@@ -17,9 +17,11 @@ mezője `1` marad: a meglévő vektorok bájtra változatlanok, az `es256` blokk
   fordulnak.
 
 ### Változott
+- Licenc: `UNLICENSED` → **MIT** (a repó gyökerének `LICENSE`-e; az egész repó MIT). A csomag továbbra is
+  `private: true` a publikálásig.
 - `testKeys.apps` / `testAppsFile()`: a `publicKeys` és a `contentPublicKeys` is benne van (a `testKeys.es256`
   nyilvános kulcsaival); egy rá `toEqual`-lal néző fogyasztói teszt ezt felveszi.
-- Új név: `@cry/media-sdk` → `@chromygabor/media-sdk` (docs/media-sdk-kiemeles-terv.md D90: a GitHub Packages a
+- Új név: `@cry/media-sdk` → `@chromygabor/media-sdk` (kiemelési terv D90: a GitHub Packages a
   hatókört a repó tulajdonosához köti). A könyvtár marad `packages/media-sdk`; a felület és a vektorok változatlanok.
 
 ### Új

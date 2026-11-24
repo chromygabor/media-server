@@ -9,7 +9,7 @@ FROM nginx:1.30.7-alpine@sha256:caf4e1e032a20f9c3c5e28fc7f25ffd768ad8677b4975c54
 
 LABEL org.opencontainers.image.title="media-server" \
       org.opencontainers.image.description="Védett médiaszerver: nginx + njs (HS256 és ES256 directory-token)" \
-      org.opencontainers.image.licenses="UNLICENSED"
+      org.opencontainers.image.licenses="MIT"
 
 # Az image entrypointja csak a templates/ envsubst-jéhez kell (realip.conf a NET_GATEWAY-ből).
 ENV NGINX_ENVSUBST_TEMPLATE_DIR=/etc/nginx/media/templates \
