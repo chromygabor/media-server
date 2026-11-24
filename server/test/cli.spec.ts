@@ -4,7 +4,7 @@ import { mkdtempSync, readFileSync, rmSync, statSync, writeFileSync, chmodSync }
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { bucketExpires } from '@cry/media-sdk';
+import { bucketExpires } from '@chromygabor/media-sdk';
 import media from '../njs/media.js';
 import { readAppsFile, writeAppsFile, type AppsFile } from '../scripts/apps-file.js';
 import { addKey, defaultKid, generateKey } from '../scripts/keys-new.js';

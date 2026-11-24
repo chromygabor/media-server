@@ -1,4 +1,4 @@
-# @cry/media-sdk
+# @chromygabor/media-sdk
 
 A védett médiaszerver (`server`) kliensoldala: aláírt URL (Bunny V2 directory-token, IP-kötés nélkül,
 `kid` és `u` kiegészítéssel), ellenőrzés, útvonal-szabályok, közös tesztvektorok. Futásidejű függőség nincs
@@ -28,7 +28,7 @@ sig = Base64URL(HMAC-SHA256(kulcs, token_path + expires + "kid=…&token_path=�
    (vázlat):
 
    ```ts
-   import { buildSignedPath } from '@cry/media-sdk';
+   import { buildSignedPath } from '@chromygabor/media-sdk';
    const path = `/${app}/${assetKey}`;
    const url = baseUrl + buildSignedPath({
      key: keys[kid], kid, u: userId, expires,
@@ -37,7 +37,7 @@ sig = Base64URL(HMAC-SHA256(kulcs, token_path + expires + "kid=…&token_path=�
    });
    ```
 
-4. **Teszt** *(WP35 után)*: `startFakeMediaServer(…)` a `@cry/media-sdk/testing`-ből. Addig: a backend hamis szervere
+4. **Teszt** *(WP35 után)*: `startFakeMediaServer(…)` a `@chromygabor/media-sdk/testing`-ből. Addig: a backend hamis szervere
    (a fogyasztó backend tesztjeiben) mintának, vagy `verifySignedPath` + `appLookupFrom` közvetlenül;
    a valódi szerver docker-tesztje: `pnpm media-server:test`.
 
@@ -57,7 +57,7 @@ sig = Base64URL(HMAC-SHA256(kulcs, token_path + expires + "kid=…&token_path=�
 
 ## Közös tesztvektorok
 
-`test-vectors.json` (exportálva: `@cry/media-sdk/test-vectors.json`) – ezt olvassa a TS-teszt (`src/vectors.spec.ts`)
+`test-vectors.json` (exportálva: `@chromygabor/media-sdk/test-vectors.json`) – ezt olvassa a TS-teszt (`src/vectors.spec.ts`)
 és a médiaszerver njs-tesztje is. A `sign` esetek közül a `source: "bunny-official-nodejs@<commit>"` jelölésűek a Bunny
 hivatalos Node-példájának (`BunnyCDN.TokenAuthentication/nodejs/token.js`) kimenetével bájtra egyeznek (egyszer,
 kézzel ellenőrizve; a Bunny kódját nem vettük át). A `verify` esetek `expected` mezője: `status` (`200` = elfogadva,
@@ -65,6 +65,6 @@ kézzel ellenőrizve; a Bunny kódját nem vettük át). A `verify` esetek `expe
 A kulcsok **csak teszt** kulcsok.
 
 ```
-pnpm --filter @cry/media-sdk test
-pnpm --filter @cry/media-sdk check:standalone   # pack + telepítés egy üres projektbe
+pnpm --filter @chromygabor/media-sdk test
+pnpm --filter @chromygabor/media-sdk check:standalone   # pack + telepítés egy üres projektbe
 ```

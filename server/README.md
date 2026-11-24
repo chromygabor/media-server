@@ -4,7 +4,7 @@ Védett médiaszerver: a hivatalos `nginx` image (tag + digest rögzítve, njs 1
 Bunny V2 directory-tokent (`kid`, `u` kiegészítéssel) ellenőrzi, és az nginx statikus motorjával szolgál ki
 (Range, ETag, sendfile). Tervek: a terv 4.1–4.4, 7.2–7.3,
 az implementációs terv WP2–WP4.
-Ügyfél-appból nem importál; a CLI-k és a tesztek a `@cry/media-sdk`-t használják.
+Ügyfél-appból nem importál; a CLI-k és a tesztek a `@chromygabor/media-sdk`-t használják.
 
 ```
 compose.yaml              egy szolgáltatás (media), read_only, 127.0.0.1:10090, rögzített alhálózat (real_ip)

@@ -1,6 +1,6 @@
 # A védett médiaszerver protokollja (SPEC)
 
-Ez a leírás **normatív**: a médiaszerver (`server`: nginx + njs) és a `@cry/media-sdk` ennek felel meg.
+Ez a leírás **normatív**: a médiaszerver (`server`: nginx + njs) és a `@chromygabor/media-sdk` ennek felel meg.
 A döntések indoklása a tervekben van (a terv 4. és 7.1);
 ha a terv és ez a leírás eltér, ez az irányadó. A kulcsszavak: **kell** / **nem szabad** (kötelező), **ajánlott**.
 

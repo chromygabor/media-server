@@ -1,10 +1,14 @@
-# Változások – @cry/media-sdk
+# Változások – @chromygabor/media-sdk
 
 A formátum a [Keep a Changelog](https://keepachangelog.com/hu/1.1.0/) mintáját követi; a verziószámozás
 [szemantikus](https://semver.org/lang/hu/). A token-, URL- és kulcsformátum, valamint az aláírás bájtra
 változatlansága a `test-vectors.json` vektoraival ellenőrzött; ennek megtörése főverzió-váltás.
 
 ## [Kiadatlan]
+
+### Változott
+- Új név: `@cry/media-sdk` → `@chromygabor/media-sdk` (docs/media-sdk-kiemeles-terv.md D90: a GitHub Packages a
+  hatókört a repó tulajdonosához köti). A könyvtár marad `packages/media-sdk`; a felület és a vektorok változatlanok.
 
 ### Új
 - `KEY_ID_RE`, `KEY_RE`, `isValidKeyId()`, `isValidKey()` (`src/keys.ts`; csomagterv WP32): a

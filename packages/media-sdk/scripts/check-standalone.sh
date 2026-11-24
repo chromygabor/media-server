@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
-# A @cry/media-sdk önállóságának ellenőrzése (csomagterv WP30): a csomag a repóból kiemelhető,
-# vagyis a becsomagolt tarball egy üres projektben, a monorepó nélkül is működik.
+# A @chromygabor/media-sdk önállóságának ellenőrzése (csomagterv WP30): a csomag a repóból
+# kiemelhető, vagyis a becsomagolt tarball egy üres projektben, a monorepó nélkül is működik.
 #
-#   pnpm --filter @cry/media-sdk check:standalone
+#   pnpm --filter @chromygabor/media-sdk check:standalone
 #
-# 1. Statikus ellenőrzés: a `src/` alatt nincs `@workspace/` hivatkozás és nincs a csomagkönyvtárból kilépő relatív
-#    import; a tsconfig nem örököl (`extends` nincs); a package.json-ban nincs `workspace:` / `@workspace/` függőség,
-#    és futásidejű függőség (`dependencies`, `peerDependencies`, `optionalDependencies`) sincs.
+# 1. Statikus ellenőrzés: a csomag neve `@chromygabor/media-sdk` (D90); a `src/` alatt nincs `@workspace/` és `@cry/`
+#    hivatkozás, és nincs a csomagkönyvtárból kilépő relatív import; a tsconfig nem örököl (`extends` nincs); a
+#    package.json-ban nincs `workspace:` / `@workspace/` függőség, és futásidejű függőség (`dependencies`, `peerDependencies`, `optionalDependencies`) sincs.
 # 2. Build, majd `pnpm pack` egy ideiglenes könyvtárba (mktemp -d; a végén törlődik).
 # 3. Ott egy üres projekt, `npm install <tarball>`.
 # 4. Egy ESM és egy CJS próba: minden alútvonal (SUBPATHS) betölthető, és a `test-vectors.json` első `sign` vektora
@@ -40,9 +40,10 @@ fail() {
 echo "▸ $PKG_NAME önállósági ellenőrzés ($PKG_DIR)"
 
 # --- 1. Statikus ellenőrzés --------------------------------------------------------------------------------------
-if grep -rn --include='*.ts' --include='*.js' --include='*.mjs' --include='*.cjs' --include='*.json' '@workspace/' src/; then
-  fail "a src/ alatt @workspace/ hivatkozás van (fent)"
+if grep -rnE --include='*.ts' --include='*.js' --include='*.mjs' --include='*.cjs' --include='*.json' '@workspace/|@cry/' src/; then
+  fail "a src/ alatt @workspace/ vagy régi (@cry/) csomagnév-hivatkozás van (fent)"
 fi
+[ "$PKG_NAME" = "@chromygabor/media-sdk" ] || fail "a csomag neve $PKG_NAME, nem @chromygabor/media-sdk (D90)"
 
 # Relatív import, export, require, dinamikus import és `new URL(…, import.meta.url)`: a feloldott útvonal a
 # csomagkönyvtáron belül kell maradjon.

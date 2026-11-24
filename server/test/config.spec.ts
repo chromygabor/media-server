@@ -1,9 +1,9 @@
 // A konfigfájlok összhangja (implementációs terv WP2 7.; csomagterv WP32): a kiterjesztés-tábla és a kulcs-regexek
-// a `@cry/media-sdk`-é (a backend is onnan importál); a compose minden változója a .env.example-ben; rögzített image;
+// a `@chromygabor/media-sdk`-é (a backend is onnan importál); a compose minden változója a .env.example-ben; rögzített image;
 // a napló nem tartalmazhat tokent.
 
 import { readFileSync } from 'node:fs';
-import { CONTENT_FILE_TYPE, KEY_ID_RE, KEY_RE, MEDIA_CONTENT_TYPES, isValidKey, isValidKeyId } from '@cry/media-sdk';
+import { CONTENT_FILE_TYPE, KEY_ID_RE, KEY_RE, MEDIA_CONTENT_TYPES, isValidKey, isValidKeyId } from '@chromygabor/media-sdk';
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 import media from '../njs/media.js';

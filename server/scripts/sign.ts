@@ -8,7 +8,7 @@
 // token_path, u nélkül, 5 perc. A kimenet a teljes URL.
 
 import { parseArgs } from 'node:util';
-import { bucketExpires, buildSignedPath } from '@cry/media-sdk';
+import { bucketExpires, buildSignedPath } from '@chromygabor/media-sdk';
 import { cliArgs, isMain, readAppsFile, type AppsFile } from './apps-file.js';
 
 export const DEFAULT_APPS = 'secrets/apps.local.json';

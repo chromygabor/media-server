@@ -9,7 +9,7 @@ import { request as httpRequest, type IncomingHttpHeaders, type IncomingMessage 
 import { createRequire } from 'node:module';
 import { join } from 'node:path';
 import { gunzipSync } from 'node:zlib';
-import { buildSignedPath, bucketExpires, signToken } from '@cry/media-sdk';
+import { buildSignedPath, bucketExpires, signToken } from '@chromygabor/media-sdk';
 import { describe, expect, inject, it } from 'vitest';
 import { APP_DIR, BLOB_SIZE, CONTENT_JSON, FILES, seededBytes, type DockerEnv } from './setup.js';
 
@@ -203,7 +203,7 @@ if (!ready) {
 
     it.each(['njs', 'QuickJS'])('a közös vektorok a konténer njs CLI-jén (%s motor)', async (engine) => {
       const require = createRequire(import.meta.url);
-      const vectors = readFileSync(require.resolve('@cry/media-sdk/test-vectors.json'), 'utf8');
+      const vectors = readFileSync(require.resolve('@chromygabor/media-sdk/test-vectors.json'), 'utf8');
       const runner = readFileSync(join(APP_DIR, 'test/docker/njs-vectors.js'), 'utf8');
       expect((await exec(['sh', '-c', 'cat > /tmp/vectors.json'], vectors)).code).toBe(0);
       expect((await exec(['sh', '-c', 'cat > /tmp/njs-vectors.js'], runner)).code).toBe(0);
