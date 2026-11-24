@@ -121,3 +121,26 @@ A kulcsok **csak teszt** kulcsok.
 pnpm --filter @chromygabor/media-sdk test
 pnpm --filter @chromygabor/media-sdk check:standalone   # pack + telepítés egy üres projektbe
 ```
+
+## Kiemelés külön repóba (recept)
+
+A csomag úgy készült, hogy a tartalmához nyúlás nélkül kiemelhető legyen: nincs `workspace:` függősége, és nem
+importál a saját könyvtárán kívülről (ezt a `check:standalone` tartja be). A kiemelés lépései:
+
+1. **History** egy friss, `--no-local` klónon (a munkafa érintetlen marad), `git filter-repo`-val, a csomag
+   útvonalát a repó gyökerére képezve:
+
+   ```bash
+   git clone --no-local --single-branch --branch master <monorepó-URL> media-sdk && cd media-sdk
+   git filter-repo --path packages/media-sdk/ --path-rename packages/media-sdk/: --prune-empty always --refs master
+   ```
+
+   Ha a csomagnak korábban más útvonala is volt (`git log --follow --name-status -- packages/media-sdk/package.json`
+   a monorepóban), azt is fel kell venni egy `--path` / `--path-rename` párral, különben az átnevezés előtti
+   történet elvész. Ugyanezért nem `git subtree split --prefix packages/media-sdk`: az csak egy útvonalat követ.
+   Push előtt audit: a `git rev-list --all --objects` útvonalai között csak a csomag fájljai lehetnek.
+2. **Az új repóban**: saját `.gitignore` (`dist/`, `node_modules/`), lockfile, CI (typecheck, lint, test, build,
+   `check:standalone`), a `private: true` helyett `publishConfig` a választott regisztryre, kiadás tagre.
+3. **A fogyasztókban**: a `"@chromygabor/media-sdk": "workspace:*"` helyére a publikált verzió (pl. `^1.0.0`; a
+   szerver tesztjeinél pontos verzió, mert azok a protokoll-paritás tanúi), a hatókör regisztryje az `.npmrc`-be,
+   majd a `packages/media-sdk` törlése a monorepóból. Az importok és a `test-vectors.json` útvonala nem változik.
