@@ -8,7 +8,7 @@
 # Deploy: 1. helyben image a server/Dockerfile-ból (server/scripts/image-build.sh: media-server:<verzió>-<SHA>,
 # OCI-címkék; piszkos munkafánál megtagad, --allow-dirty nélkül); 2. a docker-teszt EZEN az image-en
 # (MEDIA_IMAGE=…, MEDIA_DOCKER_REQUIRED=1): csak tesztelt image megy ki; 3. a szerver ellenőrzése (csak olvasás);
-# 4. átvitel: docker save | gzip | ssh … docker load (kimarad, ha ugyanez az image már ott van); 5. rsync CSAK a
+# 4. átvitel: docker save | gzip | ssh … docker load (kimarad, ha a címke ugyanazzal a tartalommal már ott van); 5. rsync CSAK a
 # compose.yaml-ra (a régi compose.yaml.prev néven marad); 6. a szerveren az ÚJ image-dzsel és a mostani apps.json-nal,
 # eldobható konténerben: compose config, check-apps.js, nginx -t (a futó konténer közben fut); 7. váltás: a .env
 # IMAGE_TAG-je az új, a PREVIOUS_IMAGE_TAG a régi címke (atomikusan; a .env egyetlen írása), up -d --wait, /healthz;
@@ -152,6 +152,13 @@ env_path() {
   printf '%s\n' "$v"
 }
 has_image() { docker image inspect "media-server:$1" >/dev/null 2>&1; }
+# Tartalmi ujjlenyomat (a revision címke + a rétegek diffID-jei): a docker save / load után és eltérő image-tárral
+# (overlay2 / containerd) is ugyanaz, az .Id nem feltétlenül.
+fingerprint() {
+  local out
+  out=$(docker image inspect --format '{{index .Config.Labels "org.opencontainers.image.revision"}} {{range .RootFS.Layers}}{{.}} {{end}}' "$1" 2>/dev/null) || return 0
+  printf '%s' "$out" | sha256sum | cut -d' ' -f1
+}
 # docker compose a megadott címkével (a .env többi értéke a fájlból).
 dc() { local t=$1; shift; IMAGE_TAG=$t docker compose "$@"; }
 # A .env IMAGE_TAG / PREVIOUS_IMAGE_TAG sora: ideiglenes fájl a DEPLOY_DIR-ben, ugyanazzal a jogosultsággal, majd mv
@@ -190,12 +197,15 @@ verify() {
   local t=$1
   cd "$dir"
   has_image "$t" || die "nincs ilyen image a szerveren: media-server:$t"
+  local keep="a futó konténer és a .env változatlan"
   note "docker compose config -q (media-server:$t)"
-  dc "$t" config -q
+  dc "$t" config -q || die "a docker compose config hibás ($keep)"
   note "check-apps.js (eldobható konténerben, media-server:$t)"
-  dc "$t" run --rm --no-deps -T -e NGINX_ENTRYPOINT_QUIET_LOGS=1 media njs -q -m -p /etc/nginx/njs /etc/nginx/njs/check-apps.js
+  dc "$t" run --rm --no-deps -T -e NGINX_ENTRYPOINT_QUIET_LOGS=1 media njs -q -m -p /etc/nginx/njs /etc/nginx/njs/check-apps.js ||
+    die "a check-apps.js szerint az apps.json hibás a media-server:$t-hez ($keep)"
   note "nginx -t (eldobható konténerben, media-server:$t)"
-  dc "$t" run --rm --no-deps -T -e NGINX_ENTRYPOINT_QUIET_LOGS=1 media nginx -c /etc/nginx/media/nginx.conf -t
+  dc "$t" run --rm --no-deps -T -e NGINX_ENTRYPOINT_QUIET_LOGS=1 media nginx -c /etc/nginx/media/nginx.conf -t ||
+    die "az nginx -t elbukott a media-server:$t-vel ($keep)"
 }
 # Váltás a megadott címkére (ugyanarra is: akkor a .env nem változik, és újratöltés / restart jön).
 switch() {
@@ -248,7 +258,7 @@ switch() {
 case "$phase" in
   check)
     image=$1
-    image_id=$2
+    image_fp=$2
     [[ -d "$dir" ]] || die "$dir nem létezik – egyszeri sudo-lépés: sudo install -d -o $(id -un) -g docker $dir (README)"
     [[ -w "$dir" ]] || die "$dir nem írható a(z) $(id -un) felhasználónak (tulajdonos: $(stat -c %U:%G "$dir"))"
     [[ -f "$dir/.env" ]] || die "$dir/.env hiányzik – kézzel kell létrehozni (README: Első telepítés)"
@@ -273,9 +283,9 @@ case "$phase" in
     echo "has-current=$([[ -n "$cur" ]] && has_image "$cur" && echo yes || echo no)"
     echo "has-previous=$([[ -n "$prev" ]] && has_image "$prev" && echo yes || echo no)"
     if [[ -n "$image" ]]; then
-      rid=$(docker image inspect --format '{{.Id}}' "$image" 2>/dev/null || true)
-      if [[ -z "$rid" ]]; then echo "image-state=missing"
-      elif [[ "$rid" == "$image_id" ]]; then echo "image-state=same"
+      rfp=$(fingerprint "$image")
+      if [[ -z "$rfp" ]]; then echo "image-state=missing"
+      elif [[ "$rfp" == "$image_fp" ]]; then echo "image-state=same"
       else echo "image-state=different"; fi
     fi
     running=""
@@ -285,8 +295,8 @@ case "$phase" in
     echo "running-image=$running"
     ;;
 
-  image-id)
-    docker image inspect --format '{{.Id}}' "$1" 2>/dev/null || true
+  fingerprint)
+    fingerprint "$1"
     ;;
 
   verify)
@@ -341,7 +351,7 @@ kv() { sed -n "s/^$1=//p" <<<"$2" | tail -n 1; }
 
 # --- deploy: image építése és tesztje (helyben) -----------------------------------------------------------------
 IMAGE=""
-IMAGE_ID=""
+IMAGE_FP=""
 TAG=""
 if [[ "$MODE" == deploy ]]; then
   [[ -f "$ROOT/packages/media-sdk/dist/index.js" ]] ||
@@ -352,8 +362,8 @@ if [[ "$MODE" == deploy ]]; then
   IMAGE=$(bash "$SERVER_DIR/scripts/image-build.sh" "${build_args[@]}" | tail -n 1) || exit 1
   [[ "$IMAGE" == media-server:* ]] || die "váratlan image-név: $IMAGE"
   TAG=${IMAGE#media-server:}
-  IMAGE_ID=$(docker image inspect --format '{{.Id}}' "$IMAGE")
-  echo "    $IMAGE ($IMAGE_ID)"
+  IMAGE_FP=$(docker image inspect --format '{{index .Config.Labels "org.opencontainers.image.revision"}} {{range .RootFS.Layers}}{{.}} {{end}}' "$IMAGE" | sha256sum | cut -d' ' -f1)
+  echo "    $IMAGE ($(docker image inspect --format '{{.Id}}' "$IMAGE"))"
   echo "    revision: $(docker image inspect --format '{{index .Config.Labels "org.opencontainers.image.revision"}}' "$IMAGE")"
 
   step "docker-teszt az image-en: $IMAGE"
@@ -367,7 +377,7 @@ if [[ "$DEPLOY_TRANSPORT" == ssh ]]; then
   ssh_err=$(ssh_run true 2>&1) ||
     die "nem érem el ssh-n: $TARGET (DEPLOY_HOST / DEPLOY_USER, kulcsos belépés?): ${ssh_err:-ismeretlen hiba}"
 fi
-check_out=$(remote check "$DEPLOY_DIR" "$IMAGE" "$IMAGE_ID") || exit 1
+check_out=$(remote check "$DEPLOY_DIR" "$IMAGE" "$IMAGE_FP") || exit 1
 old_compose_inode=$(kv compose-inode "$check_out")
 [[ -n "$old_compose_inode" ]] || die "a szerver ellenőrzése nem adott compose-inode-ot: $check_out"
 cur=$(kv current-tag "$check_out")
@@ -411,8 +421,8 @@ case "$state" in
     else
       step "image átvitele: docker save | gzip | ssh … docker load ($IMAGE; $state)"
       docker save "$IMAGE" | gzip -1 | ssh_run 'gunzip | docker load'
-      rid=$(remote image-id "$DEPLOY_DIR" "$IMAGE")
-      [[ "$rid" == "$IMAGE_ID" ]] || die "az átvitt image azonosítója eltér (${rid:-nincs} ≠ $IMAGE_ID)"
+      rfp=$(remote fingerprint "$DEPLOY_DIR" "$IMAGE")
+      [[ "$rfp" == "$IMAGE_FP" ]] || die "az átvitt image tartalma eltér a helyitől (ujjlenyomat: ${rfp:-nincs} ≠ $IMAGE_FP)"
     fi
     ;;
   *) die "a szerver ellenőrzése nem adott image-state-et: $check_out" ;;
