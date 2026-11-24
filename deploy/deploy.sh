@@ -465,8 +465,14 @@ fi
 
 step "a szerveren: ellenőrzés az új image-dzsel (a futó konténer közben fut)"
 remote verify "$DEPLOY_DIR" "$TAG"
-step "váltás: media-server:${cur:-(nincs)} → $IMAGE"
+if [[ "$TAG" == "$cur" ]]; then
+  step "ugyanaz a címke ($IMAGE): a .env marad; up -d --wait, majd restart (új inode) vagy nginx -s reload"
+  prev_after=$prev
+else
+  step "váltás: media-server:${cur:-(nincs)} → $IMAGE"
+  prev_after=$cur
+fi
 remote switch "$DEPLOY_DIR" "$TAG" "$old_compose_inode"
 step "régi image-ek takarítása (marad: a mostani, az előző és a legújabb $KEEP)"
 remote prune "$DEPLOY_DIR" "$KEEP" || echo "deploy: FIGYELEM: a takarítás nem sikerült (a deploy rendben)" >&2
-step "kész: $WHERE fut: $IMAGE (előző: ${cur:-nincs})"
+step "kész: $WHERE fut: $IMAGE (előző: ${prev_after:-nincs})"
