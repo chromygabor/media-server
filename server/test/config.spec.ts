@@ -3,8 +3,17 @@
 // .env.example-ben; rögzített image; a napló nem tartalmazhat tokent.
 
 import { readFileSync } from 'node:fs';
-import { CONTENT_FILE_TYPE, KEY_ID_RE, KEY_RE, MEDIA_CONTENT_TYPES, isValidKey, isValidKeyId } from '@chromygabor/media-sdk';
-import { validateAppsFile } from '@chromygabor/media-sdk/apps-config';
+import {
+  CONTENT_FILE_TYPE,
+  KEY_ID_RE,
+  KEY_RE,
+  MEDIA_CONTENT_TYPES,
+  PUBLIC_KEY_RE,
+  isValidKey,
+  isValidKeyId,
+  isValidPublicKey,
+} from '@chromygabor/media-sdk';
+import { generateKeyPair, validateAppsFile } from '@chromygabor/media-sdk/apps-config';
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 import media from '../njs/media.js';
@@ -43,9 +52,25 @@ describe('kulcs-regexek: njs = media-sdk', () => {
     return m?.[1] as string;
   };
 
-  it('a KEY_ID_RE az njs ID_RE-je, a KEY_RE az njs KEY_RE-je, bájtra', () => {
+  it('a KEY_ID_RE az njs ID_RE-je, a KEY_RE az njs KEY_RE-je, a PUBLIC_KEY_RE az njs PUBLIC_KEY_RE-je, bájtra', () => {
     expect(njsRegexLiteral('ID_RE')).toBe(String(KEY_ID_RE));
     expect(njsRegexLiteral('KEY_RE')).toBe(String(KEY_RE));
+    expect(njsRegexLiteral('PUBLIC_KEY_RE')).toBe(String(PUBLIC_KEY_RE));
+    expect(njsRegexLiteral('PUBLIC_KEY_RE')).toBe('/^B[A-P][A-Za-z0-9_-]{84}[AEIMQUYcgkosw048]$/');
+  });
+
+  it('property: validateApps nyilvánoskulcs-hibája = !isValidPublicKey (valódi kulcsok és egy jel átírásai)', () => {
+    const real = Array.from({ length: 8 }, () => generateKeyPair().publicKey);
+    const mutated = fc.tuple(fc.constantFrom(...real), fc.nat(86), fc.constantFrom(...'ABPQgw048_-=+/a'.split(''))).map(
+      ([k, i, c]) => k.slice(0, i) + c + k.slice(i + 1),
+    );
+    fc.assert(
+      fc.property(fc.oneof(fc.constantFrom(...real), mutated, fc.string({ maxLength: 90 })), (pk) => {
+        const errors = media.validateApps({ app: { dir: 'app', keys: {}, contentKeys: {}, publicKeys: { e: pk } } });
+        return errors.some((e) => e.includes('nem 87 jeles')) === !isValidPublicKey(pk);
+      }),
+      { numRuns: 500 },
+    );
   });
 
   // Viselkedési paritás az njs `validateApps`-én át: egy kulcsbejegyzés kid- és kulcshibája pontosan akkor jelenik
@@ -85,6 +110,8 @@ describe('apps.json-validálás: njs validateApps = media-sdk validateAppsFile (
   });
 
   const K = 'A'.repeat(43);
+  const PK = generateKeyPair().publicKey;
+  const PK2 = generateKeyPair().publicKey;
   const app = (patch: Record<string, unknown> = {}) => ({ dir: 'app1', keys: { a: K }, contentKeys: { c: K }, ...patch });
   const fx = fixture as Record<string, Record<string, unknown>>;
   const variants: [string, unknown][] = [
@@ -126,6 +153,19 @@ describe('apps.json-validálás: njs validateApps = media-sdk validateAppsFile (
     ['corp null', { app1: app({ corp: null }) }],
     ['több hiba egyszerre', { _a: app({ dir: '', keys: { 'x y': 'r' }, origins: ['*', 2], corp: 1 }), b: 3 }],
     ['a fixture egy appja elrontva', { ...fx, elearning: { ...fx.elearning, contentKeys: fx.elearning?.keys } }],
+    // ES256 (aszimmetrikus terv 3.2): a két elhagyható térkép.
+    ['publicKeys tömb', { app1: app({ publicKeys: [] }) }],
+    ['contentPublicKeys null', { app1: app({ contentPublicKeys: null }) }],
+    ['publicKeys szöveg', { app1: app({ publicKeys: 'x' }) }],
+    ['nyilvános kulcs rossz alakú', { app1: app({ publicKeys: { e: PK.slice(1) } }) }],
+    ['nyilvános kulcs szám', { app1: app({ publicKeys: { e: 7 } }) }],
+    ['nyilvános kulcs HMAC-kulcs', { app1: app({ contentPublicKeys: { f: K } }) }],
+    ['kid-ütközés keys és publicKeys', { app1: app({ publicKeys: { a: PK } }) }],
+    ['kid-ütközés contentKeys és contentPublicKeys', { app1: app({ contentPublicKeys: { c: PK } }) }],
+    ['kid-ütközés a két nyilvános térkép', { app1: app({ publicKeys: { e: PK }, contentPublicKeys: { e: PK2 } }) }],
+    ['ugyanaz a nyilvános kulcs mindkét fajtában', { app1: app({ publicKeys: { e: PK }, contentPublicKeys: { f: PK } }) }],
+    ['ismétlés és rossz kid egyszerre', { app1: app({ publicKeys: { e: PK, 'x y': 'r' }, contentPublicKeys: { e: PK, f: PK } }) }],
+    ['__proto__ kid a keys-ben és a publicKeys-ben', JSON.parse(`{"app1":{"dir":"a","keys":{"__proto__":"${K}"},"contentKeys":{},"publicKeys":{"__proto__":"${PK}"}}}`)],
   ];
 
   it.each(variants)('%s → mindkettő elutasítja, ugyanannyi hibával', (_n, apps) => {
@@ -145,6 +185,9 @@ describe('apps.json-validálás: njs validateApps = media-sdk validateAppsFile (
       { app1: app({ dir: 'a/b' }) },
       { app1: app(), app2: app() },
       { app1: app({ keys: {}, contentKeys: {}, origins: ['http://localhost:3000', 'https://a.b:8443'], corp: 'cross-origin' }) },
+      { app1: app({ publicKeys: { e: PK }, contentPublicKeys: { f: PK2 } }) },
+      { app1: app({ keys: {}, contentKeys: {}, publicKeys: {}, contentPublicKeys: {} }) },
+      { app1: app({ publicKeys: undefined, contentPublicKeys: undefined }) },
     ]) {
       expect(both(apps)).toEqual({ njs: 0, sdk: 0 });
     }
@@ -156,12 +199,16 @@ describe('apps.json-validálás: njs validateApps = media-sdk validateAppsFile (
     const kid = fc.oneof(pick('a', '2026a', 't.1_-', 'a&b', '', 'k'.repeat(129), '__proto__x'), fc.string({ maxLength: 4 }));
     const key = fc.oneof(pick(K, `${K}==`, `${K}===`, 'rovid', `${'+/_-'.repeat(11)}`), fc.string({ maxLength: 50 }), fc.integer(), fc.constant(null));
     const keyMap = fc.oneof(fc.dictionary(kid, key, { maxKeys: 3 }), pick<unknown>(undefined, null, [], 'x'));
+    const publicKey = fc.oneof(pick<unknown>(PK, PK2, PK.slice(1), `${PK.slice(0, -1)}B`, K, 7, null), fc.string({ maxLength: 4 }));
+    const publicMap = fc.oneof(fc.dictionary(kid, publicKey, { maxKeys: 3 }), pick<unknown>(undefined, null, [], 'x'));
     const origin = fc.oneof(pick<unknown>('https://a.b', 'http://localhost:3000', 'https://a.b/', '*', 'ftp://a.b', 'http://a:123456', 1, null), fc.string({ maxLength: 8 }));
     const entry = fc.record(
       {
         dir: fc.oneof(pick<unknown>('.', 'app1', 'a/b', '', '..', '/srv', 'a/', '_c', 1), fc.string({ maxLength: 5 })),
         keys: keyMap,
         contentKeys: keyMap,
+        publicKeys: publicMap,
+        contentPublicKeys: publicMap,
         origins: fc.oneof(fc.array(origin, { maxLength: 3 }), pick<unknown>('https://a.b', null)),
         corp: fc.oneof(pick<unknown>('same-site', 'same-origin', 'cross-origin', 'any', null, 1)),
       },
@@ -174,7 +221,54 @@ describe('apps.json-validálás: njs validateApps = media-sdk validateAppsFile (
       fc.tuple(name, shared).map(([n, m]) => ({ [n]: { dir: 'd', keys: m, contentKeys: m } })),
       pick<unknown>(fixture, [], null, 'x'),
     );
-    fc.assert(fc.property(apps, same), { numRuns: 500 });
+    fc.assert(fc.property(apps, same), { numRuns: 1000 });
+  });
+});
+
+describe('a kapu a konfigban (D112, D116; aszimmetrikus terv 4.)', () => {
+  const block = (name: string): string => {
+    const start = mediaConf.indexOf(`location ${name} {`);
+    expect(start, name).toBeGreaterThan(-1);
+    return mediaConf.slice(start, mediaConf.indexOf('\n    }', start));
+  };
+
+  it('a döntés js_var-okban; js_set csak a token nélküli útvonal', () => {
+    for (const v of ['status', 'reason', 'file', 'app', 'kid', 'u', 'user_key', 'kind']) {
+      expect(mediaConf).toMatch(new RegExp(`^js_var\\s+\\$media_${v};$`, 'm'));
+    }
+    expect([...mediaConf.matchAll(/^js_set\s+(\$\w+)\s+(\S+);$/gm)].map((m) => [m[1], m[2]])).toEqual([['$media_path', 'media.path']]);
+  });
+
+  it('a fő location: OPTIONS 204, 405, a kapu js_content-je; korlát és try_files csak a @serve-ben', () => {
+    const main = block('/');
+    expect(main).toMatch(/js_content\s+media\.gate;/);
+    expect(main).toMatch(/js_header_filter\s+media\.headers;/);
+    expect(main).not.toMatch(/limit_conn|limit_rate|try_files|limit_req/);
+    const serve = block('@serve');
+    for (const d of [/limit_conn\s+media_user\s+3;/, /limit_conn\s+media_app\s+40;/, /limit_rate_after\s+30m;/, /limit_rate\s+600k;/, /try_files\s+\$media_file\s+=404;/, /js_header_filter\s+media\.headers;/]) {
+      expect(serve).toMatch(d);
+    }
+    expect(serve).not.toMatch(/limit_req/);
+  });
+
+  it('@toomany: 429 "too many requests", no-store, nosniff, a @denied mintájára; error_page 429', () => {
+    expect(mediaConf).toMatch(/^\s+error_page\s+429\s+= @toomany;$/m);
+    const t = block('@toomany');
+    expect(t).toMatch(/return\s+429\s+"too many requests\\n";/);
+    expect(t).toMatch(/add_header\s+X-Content-Type-Options\s+nosniff\s+always;/);
+    expect(t).toMatch(/add_header\s+Cache-Control\s+no-store\s+always;/);
+    expect(block('@denied')).toMatch(/limit_req\s+zone=media_denied\s+burst=20\s+nodelay;/);
+  });
+
+  it('a hibaszámláló zónája az nginx.conf-ban, a neve a media.js-é; a küszöb és az ablak njs-konstans', () => {
+    expect(nginxConf).toMatch(/^\s+js_shared_dict_zone\s+zone=media_fails:1m\s+type=number\s+timeout=10s\s+evict;$/m);
+    const njsSource = read('njs/media.js');
+    expect(njsSource).toMatch(/^var FAILS_ZONE = 'media_fails';$/m);
+    expect([media.FAILS_LIMIT, media.FAILS_WINDOW_MS]).toEqual([50, 10_000]);
+    expect(njsSource).toContain('zone.incr(ip, 1, 0, FAILS_WINDOW_MS)');
+    // A WebCryptót elfedő `import crypto from 'crypto'` (terv P4) nincs.
+    expect(njsSource).not.toMatch(/^import crypto from/m);
+    expect(njsSource).toMatch(/^import hmacCrypto from 'crypto';$/m);
   });
 });
 

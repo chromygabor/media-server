@@ -1,19 +1,21 @@
 # @workspace/media-server
 
 Védett médiaszerver: a hivatalos `nginx` image (tag + digest rögzítve, njs 1.0.2) + egy njs-modul, amely a
-Bunny V2 directory-tokent (`kid`, `u` kiegészítéssel) ellenőrzi, és az nginx statikus motorjával szolgál ki
-(Range, ETag, sendfile). Tervek: a terv 4.1–4.4, 7.2–7.3,
+Bunny V2 directory-tokent (`kid`, `u` kiegészítéssel; `HS256-`) és a médiaszerver saját aszimmetrikus sémáját
+(`ES256-`, ECDSA P-256, az app saját kulcspárja; az aszimmetrikus terv)
+ellenőrzi, és az nginx statikus motorjával szolgál ki (Range, ETag, sendfile). Tervek: a terv 4.1–4.4, 7.2–7.3,
 az implementációs terv WP2–WP4.
 Ügyfél-appból nem importál; a tesztek a `@chromygabor/media-sdk`-t használják, a kulcsgenerálás és a
 próbalink-aláírás a csomag `media-keys` / `media-sign` parancsa (a gyökér `pnpm media-server:keys` / `:sign` hívja).
 
 ```
 compose.yaml              egy szolgáltatás (media), read_only, 127.0.0.1:10090, rögzített alhálózat (real_ip)
-nginx/nginx.conf          njs-modul, types-tábla, real_ip, js_preload_object apps
-nginx/media.conf          js_set változók, CORS / CORP / Cache-Control, limit_*, JSON-napló (token nélkül), /healthz
+nginx/nginx.conf          njs-modul, types-tábla, real_ip, js_preload_object apps, js_shared_dict_zone (hibaszámláló)
+nginx/media.conf          kapu (js_content + js_var-ok → @serve), limit_*, @denied / @notfound / @gone / @toomany,
+                          JSON-napló (token nélkül), /healthz
 nginx/templates/          realip.conf.template (az image envsubst-je: set_real_ip_from ${NET_GATEWAY})
-njs/media.js              token-ellenőrzés (= media-sdk verifySignedPath: status ÉS reason), js_set-kimenetek
-njs/check-apps.js         az apps.json tartalmi ellenőrzése a konténerben (njs CLI)
+njs/media.js              token-ellenőrzés (= media-sdk verifySignedPath: status ÉS reason; HS256 és ES256), a kapu
+njs/check-apps.js         az apps.json tartalmi ellenőrzése a konténerben (njs CLI), a nyilvános kulcsok görbéje is
 scripts/make-test-video.sh   szintetikus próbamédia (ffmpeg) az élő elfogadáshoz, lásd Élesítés
 secrets/                  gitignore-olt (apps.local.json, apps.prod.json)
 test/                     docker nélküli tesztek (pnpm test); fixtures/apps.test.json: CSAK TESZT kulcsok
@@ -22,12 +24,25 @@ deploy/deploy.sh          telepítés a szerverre (pnpm media-server:deploy [--d
 deploy/host-nginx.conf.example   a host-nginx media.example.com blokkja (TLS, proxy a 10090-re)
 ```
 
-## Kérés útja (terv 4.4)
+## Kérés útja (terv 4.4; a kapu: aszimmetrikus terv 4., D112)
 
-Nyers `$request_uri` → alak (`403`) → kiterjesztés-tábla (`404`) → app, `kid`, kulcsfajta, HMAC, `token_path`
-(`403`) → lejárat (`410`) → fájl (`404`) → `200`/`206`. A válasz törzse minimális (`forbidden` / `not found` /
-`expired`); az ok (`reason`) csak a JSON-naplóban. Érvénytelen tokenre IP-nként ~10 r/s (`429` fölötte);
-`limit_conn` felhasználónként 3, appenként 40; `limit_rate_after 30m`, `limit_rate 600k`.
+Nyers `$request_uri` → alak (`403`) → kiterjesztés-tábla (`404`) → app, `kid`, kulcsfajta, séma (`wrong-scheme`),
+aláírás (HMAC, illetve ES256 low-S + ECDSA), `token_path` (`403`) → lejárat (`410`) → fájl (`404`) → `200`/`206`.
+A séma a `kid`-ből jön (`keys`/`contentKeys` → HS256, `publicKeys`/`contentPublicKeys` → ES256), soha nem a tokenből.
+
+Szerkezet: a fő location `js_content`-je (`media.gate`) aszinkron ellenőriz, a döntést `js_var`-okba írja
+(`$media_status`, `$media_reason`, `$media_file`, `$media_app`, `$media_kid`, `$media_u`, `$media_user_key`,
+`$media_kind`), és sikernél a `@serve`-be irányít (`limit_conn`, `limit_rate`, `try_files`, fejlécszűrő); hibánál
+törzs nélküli `403`/`404`/`410`/`429` → `error_page` → `@denied`/`@notfound`/`@gone`/`@toomany`. Az `OPTIONS` (`204`)
+és a `405` a fő location-ben marad. A válasz törzse minimális (`forbidden` / `not found` / `expired` /
+`too many requests`); az ok (`reason`) csak a JSON-naplóban. Érvénytelen tokenre IP-nként ~10 r/s (`429` fölötte,
+a `@denied` `limit_req`-je); `limit_conn` felhasználónként 3, appenként 40; `limit_rate_after 30m`, `limit_rate 600k`.
+
+**Hibaszámláló (D116):** aszimmetrikus `kid`-re IP-nként 50 hibás aláírás / 10 s után az IP ES256-kérései az
+aláírás-ellenőrzés előtt `429`-et kapnak (`reason: blocked`, csak a naplóban), a lejáratig (az első hibától 10 s). A
+küszöb és az ablak njs-konstans (`FAILS_LIMIT`, `FAILS_WINDOW_MS`), a zóna a `js_shared_dict_zone media_fails`. A
+HMAC-kérésekre nem hat (sem a számlálás, sem a blokk). Az nginx-modul az Ed25519-et nem ismeri (D111); ezt a
+docker-teszt kanárija figyeli.
 
 ## Kulcsok
 
@@ -42,7 +57,17 @@ Nyers `$request_uri` → alak (`403`) → kiterjesztés-tábla (`404`) → app, 
   a régit látja – ilyenkor `docker compose restart media` kell, nem elég a reload.
 - Az `apps.json` tartalmi hibáját az nginx konfigtöltéskor nem látja (csak a JSON-szintaxist): reload előtt
   `docker compose exec -T media njs -q -m -p /etc/nginx/njs /etc/nginx/njs/check-apps.js`. Hibás `apps.json`
-  mellett minden kérés `403` (`reason: apps-invalid`).
+  mellett minden kérés `403` (`reason: apps-invalid`). A `check-apps.js` a nyilvános kulcsok görbéjét is nézi; egy
+  görbén kívüli kulcs `kid`-jére a szerver kérésidőben `403 internal-error`-t adna.
+- **ES256 (aszimmetrikus) `kid`:** az app generálja a kulcspárt (`media-keys --keypair`), az üzemeltetőhöz csak a
+  nyilvános kulcs (87 jel, tömörítetlen P-256 pont) jön; az első és utolsó 8 jelét egy második csatornán egyeztetni
+  kell. Felvétel: `pnpm media-server:keys --register <app> --kid <kid> --public-key <kulcs> [--content] --write
+  <apps.json>` (`publicKeys`/`contentPublicKeys`; a négy `kid`-halmaz appon belül diszjunkt, meglévő `kid`-et nem ír
+  felül). Az üzemeltető ilyen `kid`-hez nem tud próbalinket aláírni: azt az app adja (`media-sign --env-file`).
+- **Visszaállás (rollback) és az új mezők:** a WP52 előtti njs és nginx-konfig a `publicKeys`/`contentPublicKeys`
+  mezőket figyelmen kívül hagyja (a `validateApps` nem tiltja a nem ismert mezőt). Kipróbálva 2026-11-24: a régi
+  `nginx/` + `njs/` a vegyes `test/fixtures/apps.test.json`-nal `nginx -t` és `check-apps.js` rendben, a HMAC-link
+  `200`, az ES256-link `403 malformed-token`.
 
 ## Helyi futtatás
 
@@ -70,6 +95,11 @@ a konténert egyedi projektnévvel (`media-server-test-<pid>-<rand>`), szabad lo
 `172.29.<n>.0/24` alhálózattal indítja a `test/fixtures/apps.test.json` kulcsaival; a végén `down -v`, és az
 ideiglenes könyvtár törlődik. Docker (futó démon), `docker compose` vagy ffmpeg hiányában a spec üzenettel kihagy.
 Megszakított futás után a maradék: `docker compose ls` → `docker compose -p <név> down -v`, `rm -r test/.tmp`.
+A fixture vegyes (HMAC- és ES256-`kid`-ek az `elearning` appnál): a HMAC-esetek változatlanok, az ES256-esetek (`200`,
+`206`, `416`, `304`, tartalom, `wrong-scheme`, magas-S, CORS, napló, `limit_conn`, hibaszámláló a lejárattal) külön
+blokkban; a `check-apps.js` és az `nginx -t` egy HMAC-only változatra is fut; a közös vektorok (az `es256.verify`
+is) mindkét motoron; a kanári (Ed25519 a modulban) egy ideiglenes második nginx-szel a konténerben (`127.0.0.1:18099`).
+A hibaszámláló lejárat-tesztje miatt a futás ~10 s-mal hosszabb.
 
 ## Élesítés (media-host)
 

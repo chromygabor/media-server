@@ -1,6 +1,7 @@
 // A futó médiaszerver-konténer viselkedése (terv 4.1–4.4 és 8. MS1-elfogadás; implementációs
-// terv WP3 2.). A konténert a ./setup.ts indítja szintetikus teszt-gyökérrel és a test/fixtures/apps.test.json
-// CSAK TESZT kulcsaival. A kéréseket a node:http küldi, hogy a nyers útvonal (`..`, `%2F`, `//`) változatlanul
+// terv WP3 2.; a kapu és az ES256: aszimmetrikus terv WP52). A konténert a ./setup.ts indítja szintetikus
+// teszt-gyökérrel és a test/fixtures/apps.test.json CSAK TESZT kulcsaival (vegyes fájl: az elearning appnak HMAC- és
+// ES256-kid-jei is vannak; a HMAC-esetek változatlanok, az ES256-esetek külön blokkban). A kéréseket a node:http küldi, hogy a nyers útvonal (`..`, `%2F`, `//`) változatlanul
 // menjen át. A korlát-tesztek a végén futnak (nyitott kapcsolatok, IP-nkénti limit_req).
 
 import { spawn } from 'node:child_process';
@@ -19,7 +20,13 @@ const ready = env.ok ? env : null;
 interface AppFixture {
   keys: Record<string, string>;
   contentKeys: Record<string, string>;
+  publicKeys?: Record<string, string>;
+  contentPublicKeys?: Record<string, string>;
 }
+const requireJson = createRequire(import.meta.url);
+const VECTORS_FILE = requireJson.resolve('@chromygabor/media-sdk/test-vectors.json');
+/** A vektorok CSAK TESZT ES256 kulcspárjai (a fixture `t2026e` / `t2026f` nyilvános kulcsai ezek). */
+const ES = (JSON.parse(readFileSync(VECTORS_FILE, 'utf8')) as { es256: { privateKey: string; contentPrivateKey: string; publicKey: string } }).es256;
 const fixture = JSON.parse(readFileSync(join(APP_DIR, 'test/fixtures/apps.test.json'), 'utf8')) as Record<
   string,
   AppFixture
@@ -70,6 +77,30 @@ function signed(path: string, o: Partial<SegOpts> = {}): string {
 /** Tartalomlink: tartalomkulcs, fájlra szóló token_path, `u` nélkül, 5 perc. */
 function contentLink(path: string): string {
   return buildSignedPath({ key: KEY.elearningContent, kid: 't2026c', tokenPath: path, expires: now() + 300, path });
+}
+
+/** ES256-link a fixture elearning appjára (t2026e böngészős, t2026f tartalom; a vektorok CSAK TESZT kulcspárjai). */
+function esSigned(path: string, o: { u?: string | null; content?: boolean; expires?: number; privateKey?: string } = {}): string {
+  const u = o.content ? undefined : o.u === null ? undefined : (o.u ?? USER);
+  return buildSignedPath({
+    privateKey: o.privateKey ?? (o.content ? ES.contentPrivateKey : ES.privateKey),
+    kid: o.content ? 't2026f' : 't2026e',
+    tokenPath: o.content ? path : dirOf(path),
+    expires: o.expires ?? (o.content ? now() + 300 : bucketExpires(now())),
+    path,
+    ...(u ? { u } : {}),
+  });
+}
+
+/** Magas-S változat: ugyanaz az aláírás `s → n − s`-sel (a WebCrypto elfogadná, a kapu nem). */
+function highS(uri: string): string {
+  return uri.replace(/ES256-([A-Za-z0-9_-]{86})/, (_m, b64: string) => {
+    const sig = Buffer.from(b64, 'base64url');
+    const n = BigInt('0xffffffff00000000ffffffffffffffffbce6faada7179e84f3b9cac2fc632551');
+    const sv = BigInt(`0x${sig.subarray(32).toString('hex')}`);
+    Buffer.from((n - sv).toString(16).padStart(64, '0'), 'hex').copy(sig, 32);
+    return `ES256-${sig.toString('base64url')}`;
+  });
 }
 
 interface Res {
@@ -192,7 +223,7 @@ if (!ready) {
     it('check-apps.js: a teszt apps.json rendben, a hibás nem nulla kilépéssel', async () => {
       const okRun = await exec(['njs', '-q', '-m', '-p', '/etc/nginx/njs', '/etc/nginx/njs/check-apps.js']);
       expect(okRun.code, okRun.stderr).toBe(0);
-      expect(okRun.stdout).toContain('rendben (3 app)');
+      expect(okRun.stdout).toContain('rendben (3 app, 2 nyilvános kulcs)');
       const bad = JSON.stringify({ x: { dir: '../x', keys: { a: 'rövid' }, contentKeys: { a: 'rövid' } } });
       await exec(['sh', '-c', 'cat > /tmp/bad-apps.json'], bad);
       const badRun = await exec(['njs', '-q', '-m', '-p', '/etc/nginx/njs', '/etc/nginx/njs/check-apps.js', '/tmp/bad-apps.json']);
@@ -221,7 +252,7 @@ if (!ready) {
       expect((await exec(['sh', '-c', 'cat > /tmp/proto-apps.json'], apps)).code).toBe(0);
       const r = await exec(['njs', '-n', engine, '-q', '-m', '-p', '/etc/nginx/njs', '/etc/nginx/njs/check-apps.js', '/tmp/proto-apps.json']);
       expect(r.code).not.toBe(0);
-      expect(r.stdout + r.stderr).toContain('a kid a keys-ben és a contentKeys-ben is szerepel: __proto__');
+      expect(r.stdout + r.stderr).toContain('a kid több kulcstérképben is szerepel: __proto__');
     });
 
     // A QuickJS `JSON.parse`-üzenete a bemenetből idéz (`unexpected token: '<kulcs>'`); a WP39 óta a check-apps.js az
@@ -235,18 +266,118 @@ if (!ready) {
     });
 
     it.each(['njs', 'QuickJS'])('a közös vektorok a konténer njs CLI-jén (%s motor)', async (engine) => {
-      const require = createRequire(import.meta.url);
-      const vectors = readFileSync(require.resolve('@chromygabor/media-sdk/test-vectors.json'), 'utf8');
+      const vectors = readFileSync(VECTORS_FILE, 'utf8');
       const runner = readFileSync(join(APP_DIR, 'test/docker/njs-vectors.js'), 'utf8');
       expect((await exec(['sh', '-c', 'cat > /tmp/vectors.json'], vectors)).code).toBe(0);
       expect((await exec(['sh', '-c', 'cat > /tmp/njs-vectors.js'], runner)).code).toBe(0);
       const r = await exec(['njs', '-n', engine, '-q', '-m', '-p', '/etc/nginx/njs', '/tmp/njs-vectors.js', '/tmp/vectors.json']);
       expect(r.code, r.stderr).toBe(0);
-      const out = JSON.parse(r.stdout.trim().split('\n').pop()!) as { verify: number; sign: number; fails: string[] };
-      const parsed = JSON.parse(vectors) as { verify: unknown[]; sign: unknown[] };
+      const out = JSON.parse(r.stdout.trim().split('\n').pop()!) as {
+        verify: number;
+        es256Verify: number;
+        sign: number;
+        es256Tokens: number;
+        fails: string[];
+      };
+      const parsed = JSON.parse(vectors) as { verify: unknown[]; sign: unknown[]; es256: { verify: unknown[]; tokens: unknown[] } };
       expect(out.fails).toEqual([]);
       expect(out.verify).toBe(parsed.verify.length);
+      expect(out.es256Verify).toBe(parsed.es256.verify.length);
+      expect(out.es256Verify).toBeGreaterThan(10);
       expect(out.sign).toBe(parsed.sign.length);
+      expect(out.es256Tokens).toBe(parsed.es256.tokens.length);
+    });
+  });
+
+  describe('apps.json-változatok, görbe-ellenőrzés, kanári (WP52)', () => {
+    /** A fixture a nyilvános kulcsok nélkül (HMAC-only, a WP52 előtti alak). */
+    const hmacOnly = (): string => {
+      const apps = JSON.parse(readFileSync(join(APP_DIR, 'test/fixtures/apps.test.json'), 'utf8')) as Record<string, AppFixture>;
+      for (const a of Object.values(apps)) {
+        delete a.publicKeys;
+        delete a.contentPublicKeys;
+      }
+      return JSON.stringify(apps);
+    };
+
+    it.each(['njs', 'QuickJS'])('check-apps.js: HMAC-only és vegyes apps.json rendben (%s motor)', async (engine) => {
+      expect((await exec(['sh', '-c', 'cat > /tmp/hmac-apps.json'], hmacOnly())).code).toBe(0);
+      const base = ['njs', '-n', engine, '-q', '-m', '-p', '/etc/nginx/njs', '/etc/nginx/njs/check-apps.js'];
+      const hmac = await exec([...base, '/tmp/hmac-apps.json']);
+      expect(hmac.code, hmac.stderr).toBe(0);
+      expect(hmac.stdout).toContain('rendben (3 app, 0 nyilvános kulcs)');
+      const mixed = await exec(base);
+      expect(mixed.code, mixed.stderr).toBe(0);
+      expect(mixed.stdout).toContain('rendben (3 app, 2 nyilvános kulcs)');
+    });
+
+    it.each(['njs', 'QuickJS'])('check-apps.js: görbén kívüli nyilvános kulcs → hiba, a kulcs nélkül (%s motor)', async (engine) => {
+      const off = `BA${'C'.repeat(84)}A`;
+      const apps = { x: { dir: 'x', keys: {}, contentKeys: {}, publicKeys: { e: ES.publicKey }, contentPublicKeys: { f: off } } };
+      expect((await exec(['sh', '-c', 'cat > /tmp/offcurve-apps.json'], JSON.stringify(apps))).code).toBe(0);
+      const r = await exec(['njs', '-n', engine, '-q', '-m', '-p', '/etc/nginx/njs', '/etc/nginx/njs/check-apps.js', '/tmp/offcurve-apps.json']);
+      expect(r.code).not.toBe(0);
+      expect(r.stdout + r.stderr).toContain('apps["x"].contentPublicKeys["f"]: a nyilvános kulcs nem egy P-256 görbepont');
+      expect(r.stdout + r.stderr).not.toContain('CCCCCCCC');
+      expect(r.stdout + r.stderr).not.toContain(ES.publicKey.slice(0, 12));
+    });
+
+    it('nginx -t a HMAC-only és a vegyes apps.json-nal is', async () => {
+      expect((await exec(['sh', '-c', 'cat > /tmp/hmac-apps.json'], hmacOnly())).code).toBe(0);
+      const conf = await exec([
+        'sh',
+        '-c',
+        "sed 's#/etc/nginx/secrets/apps.json#/tmp/hmac-apps.json#' /etc/nginx/media/nginx.conf > /tmp/nginx-hmac.conf && grep -c /tmp/hmac-apps.json /tmp/nginx-hmac.conf",
+      ]);
+      expect(conf.stdout.trim()).toBe('1');
+      const hmac = await exec(['nginx', '-c', '/tmp/nginx-hmac.conf', '-t']);
+      expect(hmac.code, hmac.stderr).toBe(0);
+      expect(hmac.stderr).toContain('syntax is ok');
+      const mixed = await exec([...NGINX_C, '-t']);
+      expect(mixed.code, mixed.stderr).toBe(0);
+    });
+
+    // Kanári (D111): a rögzített image nginx-modulja ma nem ismeri az Ed25519-et (a CLI igen). Ha egy image-emelés
+    // után ez a teszt elbukik, az Ed25519 egy új kid-sémaként (`EDDSA-`) újra mérlegelhető. Egy második, ideiglenes
+    // nginx fut a konténerben (/tmp, a 127.0.0.1:18099-en), a futó szolgáltatást nem érinti.
+    it('kanári: a modulban az Ed25519 ma „unknown algorithm”, az ECDSA P-256 működik', async () => {
+      const js = `async function probe(r) {
+  var out = [];
+  var algs = [{ name: 'Ed25519' }, { name: 'ECDSA', namedCurve: 'P-256' }];
+  for (var i = 0; i < algs.length; i++) {
+    try {
+      await crypto.subtle.generateKey(algs[i], false, ['sign', 'verify']);
+      out.push(algs[i].name + '=ok');
+    } catch (e) {
+      out.push(algs[i].name + '=' + e.message);
+    }
+  }
+  r.return(200, out.join('\\n') + '\\n');
+}
+export default { probe: probe };
+`;
+      const conf = `load_module /usr/lib/nginx/modules/ngx_http_js_module.so;
+pid /tmp/canary.pid;
+error_log /tmp/canary.err warn;
+events {}
+http {
+  access_log off;
+  client_body_temp_path /tmp/c_cb; proxy_temp_path /tmp/c_p; fastcgi_temp_path /tmp/c_f; uwsgi_temp_path /tmp/c_u; scgi_temp_path /tmp/c_s;
+  js_path /tmp/canary;
+  js_import c from canary.js;
+  server { listen 127.0.0.1:18099; location / { js_content c.probe; } }
+}
+`;
+      expect((await exec(['sh', '-c', 'mkdir -p /tmp/canary && cat > /tmp/canary/canary.js'], js)).code).toBe(0);
+      expect((await exec(['sh', '-c', 'cat > /tmp/canary.conf'], conf)).code).toBe(0);
+      const r = await exec([
+        'sh',
+        '-c',
+        'nginx -c /tmp/canary.conf && sleep 0.5; wget -q -O - http://127.0.0.1:18099/; s=$?; nginx -c /tmp/canary.conf -s quit; exit $s',
+      ]);
+      expect(r.code, r.stderr).toBe(0);
+      expect(r.stdout).toContain('Ed25519=unknown algorithm name: "Ed25519"');
+      expect(r.stdout).toContain('ECDSA=ok');
     });
   });
 
@@ -538,6 +669,72 @@ if (!ready) {
     });
   });
 
+  describe('ES256 (aszimmetrikus kid, ugyanaz a kapu; WP52)', () => {
+    it('videó: 200, bájtra egyezik, ugyanazok a fejlécek; HEAD; Range 206; 416; If-None-Match 304', async () => {
+      const link = esSigned(`/${FILES.video}`);
+      expect(link).toMatch(/^\/bcdn_token=ES256-[A-Za-z0-9_-]{86}&kid=t2026e&/);
+      const r = await get(link);
+      expect(r.status).toBe(200);
+      expect(r.body.equals(local(FILES.video))).toBe(true);
+      expect(r.headers).toMatchObject({
+        'content-type': 'video/mp4',
+        'accept-ranges': 'bytes',
+        'x-content-type-options': 'nosniff',
+        'content-disposition': 'inline',
+        'cross-origin-resource-policy': 'same-site',
+        'cache-control': 'private, max-age=3600',
+        vary: 'Origin',
+      });
+      const head = await get(esSigned(`/${FILES.blob}`), { method: 'HEAD' });
+      expect([head.status, head.headers['content-length'], head.body.length]).toEqual([200, String(BLOB_SIZE), 0]);
+      const part = await get(esSigned(`/${FILES.blob}`), { headers: { Range: 'bytes=4194304-4198399' } });
+      expect([part.status, part.headers['content-range']]).toEqual([206, `bytes 4194304-4198399/${BLOB_SIZE}`]);
+      expect(part.body.equals(seededBytes(BLOB_SIZE).subarray(4_194_304, 4_198_400))).toBe(true);
+      const bad = await get(esSigned(`/${FILES.blob}`), { headers: { Range: `bytes=${BLOB_SIZE}-` } });
+      expect([bad.status, bad.headers['content-range'], bad.headers['cache-control']]).toEqual([416, `bytes */${BLOB_SIZE}`, 'no-store']);
+      const nm = await get(link, { headers: { 'If-None-Match': r.headers.etag! } });
+      expect([nm.status, nm.headers['cache-control']]).toEqual([304, 'private, max-age=3600']);
+    });
+
+    it('tartalom: contentPublicKeys-kid → 200, no-store; publicKeys-kid _content/-re → 403', async () => {
+      const path = `/${FILES.content}`;
+      const r = await get(esSigned(path, { content: true }));
+      expect([r.status, r.headers['content-type'], r.headers['cache-control']]).toEqual([200, 'application/gzip', 'no-store']);
+      expect(gunzipSync(r.body).toString()).toBe(CONTENT_JSON);
+      const wrongKind = buildSignedPath({ privateKey: ES.privateKey, kid: 't2026e', tokenPath: path, expires: now() + 300, path });
+      expect((await get(wrongKind, { headers: ua('es-wrong-kind') })).status).toBe(403);
+      expect(await logLine('wp3-docker/es-wrong-kind')).toMatchObject({ status: 403, reason: 'wrong-key-kind', kid: '' });
+    });
+
+    it('wrong-scheme mindkét irányban; magas-S, idegen kulcspár, átírt u → 403 bad-signature; lejárt → 410; nincs fájl → 404', async () => {
+      const video = `/${FILES.video}`;
+      const hsWithEsKid = buildSignedPath({ key: KEY.elearning, kid: 't2026e', tokenPath: LESSON, expires: now() + 60, u: USER, path: video });
+      const esWithHsKid = buildSignedPath({ privateKey: ES.privateKey, kid: 't2026a', tokenPath: LESSON, expires: now() + 60, u: USER, path: video });
+      const cases: Array<[string, string, number, string]> = [
+        ['es-ws1', hsWithEsKid, 403, 'wrong-scheme'],
+        ['es-ws2', esWithHsKid, 403, 'wrong-scheme'],
+        ['es-high', highS(esSigned(video)), 403, 'bad-signature'],
+        ['es-other', esSigned(video, { privateKey: ES.contentPrivateKey }), 403, 'bad-signature'],
+        ['es-u', esSigned(video).replace(`u=${USER}`, 'u=user-masik'), 403, 'bad-signature'],
+        ['es-exp', esSigned(video, { expires: now() - 10 }), 410, 'expired'],
+        ['es-404', esSigned(`${LESSON}nincs.mp4`), 404, ''],
+      ];
+      for (const [tag, link, status, reason] of cases) {
+        const r = await get(link, { headers: ua(tag) });
+        expect(r.status, tag).toBe(status);
+        const line = await logLine(`wp3-docker/${tag}`);
+        expect([line.status, line.reason], tag).toEqual([status, reason]);
+      }
+      expect((await get(highS(esSigned(video)))).body.toString()).toBe('forbidden\n');
+    });
+
+    it('CORS és napló: az engedett origin ACAO-t kap; a sor kid-je t2026e, token nélkül', async () => {
+      const r = await get(esSigned(`/${FILES.video}`), { headers: { ...ua('es-log'), Origin: 'https://elearning.example.test', Range: 'bytes=0-1' } });
+      expect([r.status, r.headers['access-control-allow-origin']]).toEqual([206, 'https://elearning.example.test']);
+      expect(await logLine('wp3-docker/es-log')).toMatchObject({ app: 'elearning', kid: 't2026e', u: USER, path: `/${FILES.video}`, status: 206, reason: '' });
+    });
+  });
+
   describe('korlátok (terv 4.4)', () => {
     const big = `/${FILES.big}`;
 
@@ -593,6 +790,28 @@ if (!ready) {
       }
     });
 
+    it('ES256: limit_conn ugyanazzal az u-val a 4. egyidejű kérés 503 (a HMAC-cal közös kulcs: app + u)', async () => {
+      const held: IncomingMessage[] = [];
+      try {
+        for (let i = 0; i < 2; i++) {
+          const r = await open(esSigned(big, { u: 'es-conn-user' }));
+          held.push(r);
+          expect(r.statusCode).toBe(200);
+        }
+        // A harmadik HMAC-kal: a korlát a felhasználóé, nem a sémáé.
+        const third = await open(signed(big, { u: 'es-conn-user' }));
+        held.push(third);
+        expect(third.statusCode).toBe(200);
+        const fourth = await get(esSigned(big, { u: 'es-conn-user' }), { method: 'HEAD' });
+        expect(fourth.status).toBe(503);
+        const other = await open(esSigned(big, { u: 'es-conn-masik' }));
+        held.push(other);
+        expect(other.statusCode).toBe(200);
+      } finally {
+        for (const r of held) r.destroy();
+      }
+    });
+
     it('limit_conn appenként 40: 40 nyitott kérés (14 u, legfeljebb 3/u) mellett a 41. 503; másik app közben 200', async () => {
       // A korábbi tesztek bontott kapcsolatait az nginx már elengedte-e: rövid várakozás.
       await new Promise((r) => setTimeout(r, 500));
@@ -629,11 +848,51 @@ if (!ready) {
     });
   });
 
+  describe('hibaszámláló (D116: 50 hibás ES256-aláírás / 10 s IP-nként → 429 blocked)', () => {
+    it('a küszöb után az IP ES256-kérése 429 (too many requests, no-store, nosniff), a HMAC-é és más IP-é nem; 10 s után lejár', async () => {
+      const ip = '203.0.113.77';
+      const video = `/${FILES.video}`;
+      const bad = highS(esSigned(video));
+      const t0 = performance.now();
+      // Sorban: mind számol (a kapu a döntés előtt számol), akkor is, ha a @denied limit_req-je 429-et ad.
+      const statuses: number[] = [];
+      for (let i = 0; i < 50; i++) statuses.push((await get(bad, { headers: { 'X-Forwarded-For': ip } })).status);
+      expect(new Set(statuses)).toEqual(new Set([403, 429]));
+      expect(statuses.filter((st) => st === 403).length).toBeGreaterThanOrEqual(21);
+
+      const blocked = await get(esSigned(video), { headers: { 'X-Forwarded-For': ip, ...ua('blocked') } });
+      expect(blocked.status).toBe(429);
+      expect(blocked.body.toString()).toBe('too many requests\n');
+      expect(blocked.headers).toMatchObject({ 'cache-control': 'no-store', 'x-content-type-options': 'nosniff', 'content-type': 'text/plain' });
+      expect(await logLine('wp3-docker/blocked')).toMatchObject({ ip, status: 429, reason: 'blocked', app: '', kid: '' });
+
+      // A HMAC-ra nem hat; más IP-t nem érint.
+      expect((await get(signed(video), { headers: { 'X-Forwarded-For': ip } })).status).toBe(200);
+      expect((await get(esSigned(video), { headers: { 'X-Forwarded-For': '203.0.113.78' } })).status).toBe(200);
+      // Az olcsó elővizsgálat a blokk előtt fut: ismeretlen kid → 403 (nem 429).
+      expect((await get(esSigned(video).replace('kid=t2026e', 'kid=nincs'), { headers: { 'X-Forwarded-For': ip } })).status).toBe(403);
+
+      // Lejárat: az első hiba után 10 s (explicit incr-timeout).
+      const wait = 10_500 - (performance.now() - t0);
+      if (wait > 0) await new Promise((r) => setTimeout(r, wait));
+      expect((await get(esSigned(video), { headers: { 'X-Forwarded-For': ip } })).status).toBe(200);
+    });
+
+    it('HMAC hibás aláírásra a számláló nem hat: 60 hibás HMAC után az IP ES256-kérése 200', async () => {
+      const ip = '203.0.113.79';
+      const bad = signed(`/${FILES.video}`).replace(`u=${USER}`, 'u=user-masik');
+      for (let i = 0; i < 60; i++) expect([403, 429]).toContain((await get(bad, { headers: { 'X-Forwarded-For': ip } })).status);
+      expect((await get(esSigned(`/${FILES.video}`), { headers: { 'X-Forwarded-For': ip } })).status).toBe(200);
+    });
+  });
+
   describe('a napló egésze (a végén)', () => {
     it('a JSON-sorok érvényesek, és sehol (stdout, stderr) nincs token', async () => {
       const all = await logs();
       expect(all).not.toContain('bcdn_token');
       expect(all).not.toContain('HS256-');
+      expect(all).not.toContain('ES256-');
+      for (const k of [ES.privateKey, ES.contentPrivateKey]) expect(all).not.toContain(k.slice(-40));
       expect(all).not.toContain('token_path');
       for (const k of Object.values(KEY)) expect(all).not.toContain(k);
       const json = all.split('\n').filter((l) => l.startsWith('{'));

@@ -3,6 +3,8 @@
     "dir": "elearning",
     "keys": { "t2026a": "CSAK-TESZT-kulcs-elearning-bongeszos-NEM-ELES-0001" },
     "contentKeys": { "t2026c": "CSAK-TESZT-kulcs-elearning-tartalom-NEM-ELES-00001" },
+    "publicKeys": { "t2026e": "BAgAm1ANDhyDL6tbQvTR-CnGRFrdF39TRwg34eEwWWMSYvULEqC0KGx4OM8c-tKcYYe8ySF1Ch1-DaTGFHV0CRk" },
+    "contentPublicKeys": { "t2026f": "BO5uJgSvTIXqUZ3mXv9HpDJR48F3CNLf4plU6sg1bCnn62BbwbSgudn5ezj5PG8f_6hHZ4kI0ma2_6-86ZXP2aU" },
     "origins": ["https://elearning.example.test", "http://localhost:3000"],
     "corp": "same-site"
   },
