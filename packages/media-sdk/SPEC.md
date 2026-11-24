@@ -13,7 +13,7 @@ Minden állítás mögött zárójelben a teszt, amely fedi (a kiemelésig a mon
 | **N** | `server/test/njs.spec.ts` (njs Node alatt: TS-paritás fast-checkkel, `validateApps`, js_set-kimenetek, fejlécszűrő) |
 | **C** | `server/test/config.spec.ts` (konfigfájlok összhangja) |
 | **D** | `server/test/docker/media.docker.spec.ts` (a futó konténer HTTP-n) |
-| **K** | `server/test/cli.spec.ts` (kulcsgenerálás, próbalink) |
+| **K** | `src/cli/cli.spec.ts` (a `media-keys` / `media-sign` parancs: kulcsgenerálás, próbalink) és `src/apps-config.spec.ts` (`validateAppsFile`) |
 | **P** | a fogyasztó feltöltő eszközének tesztjei |
 
 A teszt nélküli állítás jelölése: *(teszt nélkül)*. Minden idő unix-másodperc.
@@ -197,12 +197,15 @@ pedig minden kérés `403 apps-invalid`. (D: „check-apps.js”; N: „hibás v
 | `corp` (elhagyható) | `same-site` (alapérték), `same-origin` vagy `cross-origin` |
 
 (N: „validateApps” blokk, „dir \".\" → a fájl közvetlenül a /srv/media alatt”, „böngészős token u-val: … fájl a dir
-alatt”; D: „másik app saját linkje”, „`dir: \".\"` app”. A közös `dir`: teszt nélkül.)
+alatt”; D: „másik app saját linkje”, „`dir: \".\"` app”; C: „apps.json-validálás: njs validateApps = media-sdk
+validateAppsFile”, ebben a közös `dir` is.) A csomag a szabályokat a `@chromygabor/media-sdk/apps-config`
+`validateAppsFile()`-jával adja (az elfogadás és a hibák száma az njs-ével azonos).
 
-- Kulcs generálása: 32 véletlen bájt base64url-szövege (43 jel). (K: „keys:new”) Parancs: `pnpm media-server:keys`
-  (WP33 után a csomag `media-keys` parancsa).
+- Kulcs generálása: 32 véletlen bájt base64url-szövege (43 jel). (K: „media-keys”) Parancs: `media-keys` (a monorepóban
+  `pnpm media-server:keys`); programból: `generateKey()` a `./apps-config`-ból.
 - A kulcs titok: **nem szabad** repóba, naplóba, hibaüzenetbe kerülnie. (D: a napló nem tartalmazza a kulcsokat; C: a
-  `.env.example`-ben nincs kulcs; a CLI-ké: teszt nélkül)
+  `.env.example`-ben nincs kulcs; K: a hibás JSON-ú `apps.json` hibaüzenete a fájl szövegét nem idézi, a
+  `validateAppsFile` hibaüzenete kulcsot nem idéz)
 
 ## 7. Kulcsforgatás
 
@@ -243,7 +246,7 @@ a fogyasztó feltöltő eszköze):
 
 ## 9. Ajánlott backend env-nevek
 
-Konvenció, nem kötelező (a `pnpm media-server:keys` ezeket írja ki). *(teszt nélkül a csomag szintjén; a fogyasztó
+Konvenció, nem kötelező (a `media-keys` ezeket írja ki; K: „--write: hozzáad és kiírja …”). *(a fogyasztó
 backend env-sémájának tesztje)*
 
 | Név | Jelentés |

@@ -7,7 +7,7 @@ A védett médiaszerver (`server`) kliensoldala: aláírt URL (Bunny V2 director
 - **A protokoll normatív leírása: [`SPEC.md`](SPEC.md)** (URL-alak, token, státuszkódok, fejlécek, `apps.json`,
   kulcsforgatás, feltöltés, ajánlott env-nevek). Az indoklás: a terv 4.
 - Fogyasztók a monorepóban: a backend (URL-aláíró, tartalomforrás), a frontend e2e és a
-  médiaszerver CLI-jei és tesztjei.
+  médiaszerver tesztjei; a gyökér `pnpm media-server:keys` / `:sign` a csomag parancsait hívja.
 
 ```
 /bcdn_token=HS256-<sig>&kid=<kid>&token_path=<kódolt előtag>[&u=<uuid>]&expires=<unix>/<app>/<assetKey>
@@ -17,9 +17,11 @@ sig = Base64URL(HMAC-SHA256(kulcs, token_path + expires + "kid=…&token_path=�
 
 ## Gyors kezdés egy új apphoz
 
-1. **Kulcs** *(WP33 után)*: `media-keys <app> [--content] [--kid <id>] [--write <apps.json>]`.
-   Addig: `pnpm media-server:keys <app> …` (`server/scripts/keys-new.ts`). Kiírja az `apps.json`-részletet
-   és a backend env-értékeit (SPEC 9.). A kulcs titok.
+1. **Kulcs**: `media-keys <app> [--content] [--kid <id>] [--write <apps.json>] [--dir <könyvtár>]` (a monorepóban
+   `pnpm media-server:keys …`). Kiírja az `apps.json`-részletet és a backend env-értékeit (SPEC 9.); `--write`-tal
+   hozzáadja a fájlhoz (meglévő `kid`-et nem ír felül). A kulcs titok. Próbalink: `media-sign --apps <apps.json>
+   <app> <assetKey> [--u <uuid>] [--content] [--base <url>]`. Programból: `@chromygabor/media-sdk/apps-config`
+   (`generateKey`, `addKey`, `validateAppsFile`).
 2. **`apps.json`-bejegyzés és feltöltő kulcs**: `dir`, `keys`, `contentKeys`, `origins`, `corp` (SPEC 6.), és egy
    `rrsync`-re korlátozott `authorized_keys`-sor az app könyvtárára (SPEC 8.). Lépésről lépésre:
    [`server/README.md`](../../server/README.md) „Feltöltő kulcs és új app”.
@@ -65,6 +67,21 @@ sig = Base64URL(HMAC-SHA256(kulcs, token_path + expires + "kid=…&token_path=�
 | `createUrlSigner({ baseUrl, app, kid?, key?, maxTtlSeconds?, contentKid?, contentKey?, contentTtlSeconds?, now? })` | URL-aláíró: `signDirectory(…)` (böngészős linkek egy hatókörre) és `signContentFile(version)` (tartalom-token); az elutasítás ok-kódja `SignRefusal` |
 | `MEDIA_URL_VERSION_LENGTH`, `CONTENT_TOKEN_TTL_SECONDS` | a `?v=` hossza (12) és a tartalom-token alap-élettartama (300 mp) |
 | `base64url`, `timingSafeEqualStr` | segédek |
+
+`@chromygabor/media-sdk/apps-config` (az `apps.json`, SPEC 6.):
+
+| Függvény / típus | Mit csinál |
+| --- | --- |
+| `AppEntry`, `AppsFile`, `AppCorp`, `APP_CORP_VALUES` | az `apps.json` típusai (`dir`, `keys`, `contentKeys`, `origins?`, `corp?`) |
+| `validateAppsFile(value)` | a szerver (njs `validateApps`) szabályai: `{ ok: true, apps }` vagy `{ ok: false, errors }`; a hibaüzenet kulcsot nem idéz |
+| `isValidAppName(name)` | app-név: biztonságos szegmens, nem `_`-os |
+| `generateKey()` | új kulcs: 32 véletlen bájt base64url-szövege (43 jel) |
+| `defaultKid(content, now?)` | alap `kid`: `<év>a` / `<év>c` |
+| `addKey(apps, { app, kid, key, content, dir? })` | kulcs hozzáadása (új objektum; új app `dir` = app-név, `origins: []`, `corp: same-site`); meglévő `kid`-re hiba |
+
+Parancsok (`bin`): `media-keys` és `media-sign` (`--help`). Az `apps.json` útvonalát argumentumként kapják
+(`--write`, illetve a kötelező `--apps`), alapértelmezett útvonal nincs. A hibás JSON-ú fájl hibaüzenete a fájl
+szövegét nem idézi (legfeljebb sort és oszlopot ad).
 
 ## Közös tesztvektorok
 

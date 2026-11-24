@@ -1,9 +1,10 @@
-// A konfigfájlok összhangja (implementációs terv WP2 7.; csomagterv WP32): a kiterjesztés-tábla és a kulcs-regexek
-// a `@chromygabor/media-sdk`-é (a backend is onnan importál); a compose minden változója a .env.example-ben; rögzített image;
-// a napló nem tartalmazhat tokent.
+// A konfigfájlok összhangja (implementációs terv WP2 7.; csomagterv WP32, WP33): a kiterjesztés-tábla, a kulcs-regexek
+// és az apps.json-validálás a `@chromygabor/media-sdk`-é (a backend is onnan importál); a compose minden változója a
+// .env.example-ben; rögzített image; a napló nem tartalmazhat tokent.
 
 import { readFileSync } from 'node:fs';
 import { CONTENT_FILE_TYPE, KEY_ID_RE, KEY_RE, MEDIA_CONTENT_TYPES, isValidKey, isValidKeyId } from '@chromygabor/media-sdk';
+import { validateAppsFile } from '@chromygabor/media-sdk/apps-config';
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 import media from '../njs/media.js';
@@ -63,6 +64,109 @@ describe('kulcs-regexek: njs = media-sdk', () => {
         return kidError === !isValidKeyId(kid) && keyError === !isValidKey(key);
       }),
     );
+  });
+});
+
+describe('apps.json-validálás: njs validateApps = media-sdk validateAppsFile (P8)', () => {
+  const fixture: unknown = JSON.parse(read('test/fixtures/apps.test.json'));
+  /** Az njs és a csomag eredménye: elfogadás/elutasítás és a hibák száma (a szövegben a csomag kulcsot nem idéz). */
+  const both = (apps: unknown) => {
+    const njs = media.validateApps(apps);
+    const sdk = validateAppsFile(apps);
+    return { njs: njs.length, sdk: sdk.ok ? 0 : sdk.errors.length };
+  };
+  const same = (apps: unknown): boolean => {
+    const r = both(apps);
+    return r.njs === r.sdk;
+  };
+
+  it('a teszt-fixture mindkettőnek érvényes', () => {
+    expect(both(fixture)).toEqual({ njs: 0, sdk: 0 });
+  });
+
+  const K = 'A'.repeat(43);
+  const app = (patch: Record<string, unknown> = {}) => ({ dir: 'app1', keys: { a: K }, contentKeys: { c: K }, ...patch });
+  const fx = fixture as Record<string, Record<string, unknown>>;
+  const variants: [string, unknown][] = [
+    ['nem objektum gyökér', []],
+    ['null gyökér', null],
+    ['szöveg gyökér', 'apps'],
+    ['üres', {}],
+    ['_-os app-név', { ...fx, _x: fx.masik }],
+    ['.-os app-név', { '.x': app() }],
+    ['/ az app-névben', { 'a/b': app() }],
+    ['app null', { app1: null }],
+    ['app tömb', { app1: [] }],
+    ['dir ..', { app1: app({ dir: '../x' }) }],
+    ['dir abszolút', { app1: app({ dir: '/srv' }) }],
+    ['dir üres', { app1: app({ dir: '' }) }],
+    ['dir hiányzik', { app1: app({ dir: undefined }) }],
+    ['dir szám', { app1: app({ dir: 1 }) }],
+    ['dir záró /', { app1: app({ dir: 'a/' }) }],
+    ['dir .-os szegmens', { app1: app({ dir: 'a/.b' }) }],
+    ['rövid kulcs', { app1: app({ keys: { a: 'rovid' } }) }],
+    ['nem szöveg kulcs', { app1: app({ keys: { a: 42 } }) }],
+    ['három =', { app1: app({ keys: { a: `${K}===` } }) }],
+    ['kid-ütközés', { app1: app({ keys: { a: K }, contentKeys: { a: K } }) }],
+    ['érvénytelen kid', { app1: app({ keys: { 'a&b': K } }) }],
+    ['túl hosszú kid', { app1: app({ keys: { ['k'.repeat(129)]: K } }) }],
+    ['hiányzó keys', { app1: app({ keys: undefined }) }],
+    ['hiányzó contentKeys', { app1: app({ contentKeys: undefined }) }],
+    ['keys tömb', { app1: app({ keys: [] }) }],
+    ['origins nem tömb', { app1: app({ origins: 'https://a.b' }) }],
+    ['origin *', { app1: app({ origins: ['*'] }) }],
+    ['origin útvonallal', { app1: app({ origins: ['https://a.b/x'] }) }],
+    ['origin záró /', { app1: app({ origins: ['https://a.b/'] }) }],
+    ['origin szám', { app1: app({ origins: [1] }) }],
+    ['origin hosszú port', { app1: app({ origins: ['http://a:123456'] }) }],
+    ['corp', { app1: app({ corp: 'any' }) }],
+    ['corp null', { app1: app({ corp: null }) }],
+    ['több hiba egyszerre', { _a: app({ dir: '', keys: { 'x y': 'r' }, origins: ['*', 2], corp: 1 }), b: 3 }],
+    ['a fixture egy appja elrontva', { ...fx, elearning: { ...fx.elearning, contentKeys: fx.elearning?.keys } }],
+  ];
+
+  it.each(variants)('%s → mindkettő elutasítja, ugyanannyi hibával', (_n, apps) => {
+    const r = both(apps);
+    expect(r.njs).toBeGreaterThan(0);
+    expect(r.sdk).toBe(r.njs);
+  });
+
+  it('engedett változatok: dir "." és több szegmens, közös dir, üres kulcstérképek, origins / corp nélkül', () => {
+    for (const apps of [
+      { app1: app({ dir: '.' }) },
+      { app1: app({ dir: 'a/b' }) },
+      { app1: app(), app2: app() },
+      { app1: app({ keys: {}, contentKeys: {}, origins: ['http://localhost:3000', 'https://a.b:8443'], corp: 'cross-origin' }) },
+    ]) {
+      expect(both(apps)).toEqual({ njs: 0, sdk: 0 });
+    }
+  });
+
+  it('property: véletlen apps.json-on ugyanaz az elfogadás és a hibák száma', () => {
+    const pick = <T>(...xs: T[]) => fc.constantFrom(...xs);
+    const name = fc.oneof(pick('app1', 'elearning-dev', 'a.b', '_x', '.x', 'a/b', '', 'x y'), fc.string({ maxLength: 6 }));
+    const kid = fc.oneof(pick('a', '2026a', 't.1_-', 'a&b', '', 'k'.repeat(129), '__proto__x'), fc.string({ maxLength: 4 }));
+    const key = fc.oneof(pick(K, `${K}==`, `${K}===`, 'rovid', `${'+/_-'.repeat(11)}`), fc.string({ maxLength: 50 }), fc.integer(), fc.constant(null));
+    const keyMap = fc.oneof(fc.dictionary(kid, key, { maxKeys: 3 }), pick<unknown>(undefined, null, [], 'x'));
+    const origin = fc.oneof(pick<unknown>('https://a.b', 'http://localhost:3000', 'https://a.b/', '*', 'ftp://a.b', 'http://a:123456', 1, null), fc.string({ maxLength: 8 }));
+    const entry = fc.record(
+      {
+        dir: fc.oneof(pick<unknown>('.', 'app1', 'a/b', '', '..', '/srv', 'a/', '_c', 1), fc.string({ maxLength: 5 })),
+        keys: keyMap,
+        contentKeys: keyMap,
+        origins: fc.oneof(fc.array(origin, { maxLength: 3 }), pick<unknown>('https://a.b', null)),
+        corp: fc.oneof(pick<unknown>('same-site', 'same-origin', 'cross-origin', 'any', null, 1)),
+      },
+      { requiredKeys: [] },
+    );
+    const shared = fc.dictionary(kid, fc.constant(K), { maxKeys: 2 });
+    const apps = fc.oneof(
+      fc.dictionary(name, fc.oneof(entry, pick<unknown>(null, [], 'x')), { maxKeys: 3 }),
+      // Közös kid a két térképben (ütközés) és a jó eset gyakrabban.
+      fc.tuple(name, shared).map(([n, m]) => ({ [n]: { dir: 'd', keys: m, contentKeys: m } })),
+      pick<unknown>(fixture, [], null, 'x'),
+    );
+    fc.assert(fc.property(apps, same), { numRuns: 500 });
   });
 });
 

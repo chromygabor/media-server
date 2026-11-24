@@ -22,10 +22,14 @@ set -euo pipefail
 # Az `exports` minden kulcsa; a `.json` végűek JSON-ként töltődnek be, a többi modulként.
 SUBPATHS=(
   "."
+  "./apps-config"
   "./test-vectors.json"
 )
-# A `bin` mező parancsai (WP33-tól: media-keys, media-sign).
-BINS=()
+# A `bin` mező parancsai.
+BINS=(
+  "media-keys"
+  "media-sign"
+)
 # -------------------------------------------------------------------------------------------------------------------
 
 PKG_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"

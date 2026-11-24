@@ -6,5 +6,5 @@
     "noEmit": true,
     "types": ["node"]
   },
-  "include": ["scripts", "test", "njs/*.d.ts", "vitest.config.ts"]
+  "include": ["test", "njs/*.d.ts", "vitest.config.ts"]
 }

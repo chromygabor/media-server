@@ -11,6 +11,14 @@ változatlansága a `test-vectors.json` vektoraival ellenőrzött; ennek megtör
   hatókört a repó tulajdonosához köti). A könyvtár marad `packages/media-sdk`; a felület és a vektorok változatlanok.
 
 ### Új
+- `./apps-config` alútvonal (`src/apps-config.ts`; csomagterv WP33): az `apps.json` típusai
+  (`AppEntry`, `AppsFile`, `AppCorp`, `APP_CORP_VALUES`), `validateAppsFile()` a médiaszerver njs `validateApps`
+  szabályaival (`{ ok: true, apps } | { ok: false, errors }`; az elfogadás és a hibák száma azonos, a hibaüzenet
+  kulcsot nem idéz), `isValidAppName()`, `generateKey()`, `defaultKid()`, `addKey()`.
+- `media-keys` és `media-sign` parancs (`bin`; korábban `server/scripts/keys-new.ts`, `sign.ts`): azonos
+  paraméterek, kimenet és fájlkezelés, de az `apps.json` útvonala argumentum (`--write`, illetve a most kötelező
+  `--apps`), és van `--help`. Hibánál egy sor a stderr-re (verem nélkül); a hibás JSON-ú `apps.json` hibaüzenete a
+  fájl szövegét (benne a kulcsokat) nem idézi; `--write` után figyelmeztetés, ha a fájl tartalmilag hibás.
 - `createUrlSigner()` (`src/signer.ts`; csomagterv WP34): `signDirectory()` böngészős linkekre
   egy hatókör-könyvtárra (könyvtár-token, `expires = min(tokenExp, most + maxTtlSeconds)`, `?v=` a `sha256` első 12
   jeléből, `_`/hatókör/biztonság/kiterjesztés-szűrés) és `signContentFile()` a tartalomkiadásra (tartalomkulcs,

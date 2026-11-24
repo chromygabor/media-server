@@ -7,6 +7,10 @@
   "main": "./dist/index.cjs",
   "module": "./dist/index.js",
   "types": "./dist/index.d.ts",
+  "bin": {
+    "media-keys": "./bin/media-keys.js",
+    "media-sign": "./bin/media-sign.js"
+  },
   "exports": {
     ".": {
       "import": {
@@ -18,10 +22,21 @@
         "default": "./dist/index.cjs"
       }
     },
+    "./apps-config": {
+      "import": {
+        "types": "./dist/apps-config.d.ts",
+        "default": "./dist/apps-config.js"
+      },
+      "require": {
+        "types": "./dist/apps-config.d.cts",
+        "default": "./dist/apps-config.cjs"
+      }
+    },
     "./test-vectors.json": "./test-vectors.json"
   },
   "files": [
     "dist",
+    "bin",
     "test-vectors.json",
     "SPEC.md",
     "CHANGELOG.md"

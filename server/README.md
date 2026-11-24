@@ -4,7 +4,8 @@ Védett médiaszerver: a hivatalos `nginx` image (tag + digest rögzítve, njs 1
 Bunny V2 directory-tokent (`kid`, `u` kiegészítéssel) ellenőrzi, és az nginx statikus motorjával szolgál ki
 (Range, ETag, sendfile). Tervek: a terv 4.1–4.4, 7.2–7.3,
 az implementációs terv WP2–WP4.
-Ügyfél-appból nem importál; a CLI-k és a tesztek a `@chromygabor/media-sdk`-t használják.
+Ügyfél-appból nem importál; a tesztek a `@chromygabor/media-sdk`-t használják, a kulcsgenerálás és a
+próbalink-aláírás a csomag `media-keys` / `media-sign` parancsa (a gyökér `pnpm media-server:keys` / `:sign` hívja).
 
 ```
 compose.yaml              egy szolgáltatás (media), read_only, 127.0.0.1:10090, rögzített alhálózat (real_ip)
@@ -13,8 +14,6 @@ nginx/media.conf          js_set változók, CORS / CORP / Cache-Control, limit_
 nginx/templates/          realip.conf.template (az image envsubst-je: set_real_ip_from ${NET_GATEWAY})
 njs/media.js              token-ellenőrzés (= media-sdk verifySignedPath: status ÉS reason), js_set-kimenetek
 njs/check-apps.js         az apps.json tartalmi ellenőrzése a konténerben (njs CLI)
-scripts/keys-new.ts       kulcsgenerálás
-scripts/sign.ts           próbalink aláírása
 scripts/make-test-video.sh   szintetikus próbamédia (ffmpeg) az élő elfogadáshoz, lásd Élesítés
 secrets/                  gitignore-olt (apps.local.json, apps.prod.json)
 test/                     docker nélküli tesztek (pnpm test); fixtures/apps.test.json: CSAK TESZT kulcsok
@@ -36,7 +35,8 @@ Nyers `$request_uri` → alak (`403`) → kiterjesztés-tábla (`404`) → app, 
   Bunny is használja); az `apps.json` értékét senki nem dekódolja. Az njs legalább 43 jeles base64(url) szöveget
   fogad el.
 - `pnpm media-server:keys <app> [--content] [--kid <id>] [--write <apps.json>] [--dir <könyvtár>]` – kiírja az
-  `apps.json`-részletet és a backend-oldali (MS2) értéket; `--write` csak hozzáad (meglévő `kid`-et nem ír felül),
+  `apps.json`-részletet és a backend-oldali (MS2) értéket (a csomag `media-keys` parancsa, munkakönyvtár:
+  `server`); `--write` csak hozzáad (meglévő `kid`-et nem ír felül),
   helyben ír (ugyanaz az inode), új fájlt `0600`-zal hoz létre, a meglévő jogosultságát megtartja.
   Az `apps.json` egy fájlként van csatolva: ha egy szerkesztő új fájlt (új inode-ot) ír helyette, a futó konténer
   a régit látja – ilyenkor `docker compose restart media` kell, nem elég a reload.
@@ -57,7 +57,8 @@ docker compose logs -f media               # JSON-napló, token nélkül
 docker compose down
 ```
 
-A `sign` relatív útvonalai (`--apps`) az `server`-hez képest értendők. Negatív `--ttl` csak `=`-vel
+A `media-server:keys` és a `media-server:sign` relatív útvonalai (`--write`, `--apps`) az `server`-hez
+képest értendők; a `media-server:sign` alapból a `secrets/apps.local.json`-ból ír alá (egy `--apps` felülírja). Negatív `--ttl` csak `=`-vel
 (`--ttl=-10`).
 
 ## Docker-integrációs teszt
@@ -128,7 +129,7 @@ bízza meg).
 ### Kulcsok és az `apps.json` a szerveren
 
 A kulcsok a fejlesztőgépen készülnek (a szerveren nincs Node), a gitignore-olt `secrets/apps.prod.json`-ba
-(ebből ír alá a `sign` is), és innen kerülnek fel. Az `apps.json` két példányban él (D12): a fejlesztőgépen
+(ebből ír alá a `media-server:sign` is), és innen kerülnek fel. Az `apps.json` két példányban él (D12): a fejlesztőgépen
 (`secrets/apps.prod.json`, `0600`, gitignore-olt) és a szerveren (`secrets/apps.json`, `0400`); jelszókezelő nincs.
 Elvesztése nem adatvesztés: új kulcs + feltöltés + `deploy` + a backend env-je.
 
@@ -140,10 +141,10 @@ pnpm media-server:keys <app> --kid <kid> --write secrets/apps.prod.json
 pnpm media-server:keys <app> --kid <kid> --content --write secrets/apps.prod.json
 pnpm media-server:keys <app>-dev --dir <dir> --kid <kid> --write secrets/apps.prod.json
 pnpm media-server:keys <app>-dev --kid <kid> --content --write secrets/apps.prod.json
-# az origins és a corp kézzel (a keys:new alapja: origins [], corp same-site; a dir alapból az app neve)
+# az origins és a corp kézzel (a media-server:keys alapja: origins [], corp same-site; a dir alapból az app neve)
 ```
 
-A `keys:new` stdout-ja a kulcsot is kiírja: élesben `>/dev/null`-ra irányítandó; a backend env-értéke a helyi
+A `media-server:keys` stdout-ja a kulcsot is kiírja: élesben `>/dev/null`-ra irányítandó; a backend env-értéke a helyi
 fájlból vehető (`jq -r '.["<app>"].keys' …`).
 
 Feltöltés új fájlként, atomikusan (a régi `0400`-as fájl nem írható felül, és a `mv` új inode-ot ad – a
@@ -157,10 +158,10 @@ pnpm media-server:deploy                    # check-apps.js, nginx -t, majd rest
 
 Nincs más mentés (D12): a két példány elég, a kulcs pótolható.
 
-**Rotáció** (appenként és kulcsfajtánként független, terv 4.3): az új `kid` előbb a szerverre (`keys:new --write`
-→ feltöltés → `deploy`), csak utána vált rá az aláíró (MS2-ben a backend env-je; a `sign`-nál `--kid`). A régi
+**Rotáció** (appenként és kulcsfajtánként független, terv 4.3): az új `kid` előbb a szerverre (`media-server:keys … --write`
+→ feltöltés → `deploy`), csak utána vált rá az aláíró (MS2-ben a backend env-je; a `media-server:sign`-nál `--kid`). A régi
 kulcs a leghosszabb lejárat után törölhető (böngészős: 6 óra, tartalom: 5 perc): a bejegyzés kézzel ki a helyi
-fájlból, újra feltöltés + `deploy`. **Új app:** egy `keys:new` (új app-névvel), `install -d data/<dir>`, feltöltés,
+fájlból, újra feltöltés + `deploy`. **Új app:** egy `media-server:keys` (új app-névvel), `install -d data/<dir>`, feltöltés,
 `deploy` – kód nem változik.
 
 ### Feltöltő kulcs és új app
@@ -176,7 +177,7 @@ restrict,command="/usr/bin/rrsync -munge /srv/media-server/data/<dir>" ssh-ed255
 Új app (pl. `masik`) felvétele – sudo, nginx- és kódváltozás nélkül:
 
 1. `mkdir /srv/media-server/data/masik` (a szerveren, `deploy`-ként).
-2. Kulcsok az `apps.prod.json`-ba: `pnpm media-server:keys masik --kid 2026a --write`, tartalomkulcs kell-e:
+2. Kulcsok az `apps.prod.json`-ba: `pnpm media-server:keys masik --kid 2026a --write secrets/apps.prod.json`, tartalomkulcs kell-e:
    `--content --kid 2026c`; kézzel `dir`, `origins`, `corp` (`same-site`, ha `*.example.com` alatt fut).
 3. Az `apps.json` felmásolása (`secrets/apps.json`, 0400) és `pnpm media-server:deploy`.
 4. Feltöltő kulcs: `ssh-keygen -t ed25519 -f ~/.ssh/media_upload_masik -N ""`, a fenti sor a saját
@@ -240,7 +241,7 @@ curl -sI '<url>'                            # 200; Range: curl -s -o /dev/null -
 ```
 
 Az app `dir`-je a szerveren `<dir>`, tehát a `<assetKey>` a `data/<dir>/` alatti
-relatív útvonal. A `sign` a `_content/`-et csak `--content`-tel (tartalomkulccsal) írja alá; a szerver a böngészős
+relatív útvonal. A `media-server:sign` a `_content/`-et csak `--content`-tel (tartalomkulccsal) írja alá; a szerver a böngészős
 kulccsal aláírt `_content/`-kérést `403`-mal utasítja el.
 
 ### Hibakeresés
