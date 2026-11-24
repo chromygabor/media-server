@@ -163,6 +163,29 @@ kulcs a leghosszabb lejárat után törölhető (böngészős: 6 óra, tartalom:
 fájlból, újra feltöltés + `deploy`. **Új app:** egy `keys:new` (új app-névvel), `install -d data/<dir>`, feltöltés,
 `deploy` – kód nem változik.
 
+### Feltöltő kulcs és új app
+
+Feltöltés (a fogyasztó feltöltő eszközével) nem külön felhasználóval megy, hanem a `deploy`-ra appenként
+egy **korlátozott kulccsal**: a `~/.ssh/authorized_keys` egy sora csak `rrsync`-et enged, csak az app könyvtárába.
+A `restrict` kulcsonként tiltja a shellt, a terminált és a továbbításokat; a `deploy` többi kulcsa változatlan.
+
+```
+restrict,command="/usr/bin/rrsync -munge /srv/media-server/data/<dir>" ssh-ed25519 AAAA… media-upload-<app>
+```
+
+Új app (pl. `masik`) felvétele – sudo, nginx- és kódváltozás nélkül:
+
+1. `mkdir /srv/media-server/data/masik` (a szerveren, `deploy`-ként).
+2. Kulcsok az `apps.prod.json`-ba: `pnpm media-server:keys masik --kid 2026a --write`, tartalomkulcs kell-e:
+   `--content --kid 2026c`; kézzel `dir`, `origins`, `corp` (`same-site`, ha `*.example.com` alatt fut).
+3. Az `apps.json` felmásolása (`secrets/apps.json`, 0400) és `pnpm media-server:deploy`.
+4. Feltöltő kulcs: `ssh-keygen -t ed25519 -f ~/.ssh/media_upload_masik -N ""`, a fenti sor a saját
+   `data/masik` gyökérrel a szerveren a `deploy` `authorized_keys`-ébe (előtte mentés).
+5. Az app backendjének env-je: `MEDIA_SERVER_URL`, `MEDIA_SERVER_APP=masik`, `MEDIA_SERVER_KEY_ID`,
+   `MEDIA_SERVER_KEYS` (+ `MEDIA_SERVER_CONTENT_KEY_ID`, `MEDIA_SERVER_CONTENT_KEY`).
+
+Kivezetés visszafelé: bejegyzés és kulcssor törlése, deploy, majd a mappa törlése.
+
 ### Deploy
 
 ```
