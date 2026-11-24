@@ -1,4 +1,4 @@
-import { createHmac } from 'node:crypto';
+import { createHmac, createPublicKey, generateKeyPairSync, verify as nodeVerify, type KeyObject } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
 import {
   appLookupFrom,
@@ -156,5 +156,128 @@ describe('kulcsforgatás: több kid egyidejűleg (SPEC 7.)', () => {
     const rotated = appLookupFrom({ elearning: { keys: { '2026b': NEW }, contentKeys: {} } });
     expect(verifySignedPath(oldLink, rotated, E)).toEqual({ ok: false, status: 403, reason: 'unknown-kid' });
     expect(verifySignedPath(newLink, rotated, E)).toMatchObject({ ok: true, kid: '2026b' });
+  });
+});
+
+describe('ES256 séma (SPEC 2., 4. 6a/6b)', () => {
+  // CSAK TESZT kulcspárok, futáskor generálva.
+  const newPair = () => {
+    const { privateKey, publicKey } = generateKeyPairSync('ec', { namedCurve: 'prime256v1' });
+    const jwk = publicKey.export({ format: 'jwk' });
+    const raw = Buffer.concat([Buffer.from([4]), Buffer.from(jwk.x as string, 'base64url'), Buffer.from(jwk.y as string, 'base64url')]);
+    return { privateKey, pkcs8: privateKey.export({ format: 'der', type: 'pkcs8' }).toString('base64url'), publicKey: raw.toString('base64url') };
+  };
+  const B = newPair();
+  const C = newPair();
+  const N = BigInt('0xffffffff00000000ffffffffffffffffbce6faada7179e84f3b9cac2fc632551');
+  const sOf = (token: string): bigint => BigInt(`0x${Buffer.from(token.slice(6), 'base64url').subarray(32).toString('hex')}`);
+  const withS = (token: string, s: bigint): string => {
+    const sig = Buffer.from(token.slice(6), 'base64url');
+    Buffer.from(s.toString(16).padStart(64, '0'), 'hex').copy(sig, 32);
+    return `ES256-${sig.toString('base64url')}`;
+  };
+  const mixed = appLookupFrom({
+    elearning: {
+      keys: { '2026a': KEY },
+      contentKeys: { '2026c': CKEY },
+      publicKeys: { '2026e': B.publicKey },
+      contentPublicKeys: { '2026f': C.publicKey },
+    },
+  });
+  const link = (over: Partial<{ privateKey: string | KeyObject; kid: string; u: string }> = {}) =>
+    buildSignedPath({ privateKey: B.pkcs8, kid: '2026e', u: U, tokenPath: DIR, expires: E, path: FILE, ...over });
+
+  it('aláír → elfogad (szöveges és KeyObject titkos kulccsal), a token ES256- + 86 jel, a séma a kid-ből', () => {
+    for (const privateKey of [B.pkcs8, B.privateKey]) {
+      const uri = link({ privateKey });
+      expect(parseSignedPath(uri)).toMatchObject({ token: expect.stringMatching(/^ES256-[A-Za-z0-9_-]{85}[AQgw]$/) });
+      expect(verifySignedPath(uri, mixed, E)).toMatchObject({ ok: true, kid: '2026e', u: U, kind: 'browser' });
+    }
+    const c = buildSignedPath({ privateKey: C.pkcs8, kid: '2026f', tokenPath: CFILE, expires: E, path: CFILE });
+    expect(verifySignedPath(c, mixed, E)).toMatchObject({ ok: true, kid: '2026f', kind: 'content' });
+    expect(verifySignedPath(link(), mixed, E + 1)).toEqual({ ok: false, status: 410, reason: 'expired' });
+  });
+
+  it('az aláírás véletlenszerű: két aláírás különbözik, mindkettő érvényes', () => {
+    const a = link();
+    const b = link();
+    expect(a).not.toBe(b);
+    expect(verifySignedPath(a, mixed, E).ok && verifySignedPath(b, mixed, E).ok).toBe(true);
+  });
+
+  it('az M ugyanaz, mint a HMAC-é: a token a Node-dal közvetlenül ellenőrizhető', () => {
+    const t = signToken({ privateKey: B.pkcs8, tokenPath: DIR, expires: E, params: { kid: '2026e', u: U } });
+    const m = Buffer.from(`${DIR}${E}kid=2026e&token_path=${DIR}&u=${U}`);
+    const key = createPublicKey(B.privateKey);
+    expect(nodeVerify('sha256', m, { key, dsaEncoding: 'ieee-p1363' }, Buffer.from(t.slice(6), 'base64url'))).toBe(true);
+  });
+
+  it('low-S: az aláíró mindig normalizál; a magas-S változat bad-signature (a Node maga elfogadná)', () => {
+    for (let i = 0; i < 40; i++) {
+      const t = signToken({ privateKey: B.pkcs8, tokenPath: DIR, expires: E, params: { kid: '2026e', u: U } });
+      expect(sOf(t) <= N / 2n).toBe(true);
+    }
+    const uri = link();
+    const t = parseSignedPath(uri) as { token: string };
+    const high = withS(t.token, N - sOf(t.token));
+    const m = Buffer.from(`${DIR}${E}kid=2026e&token_path=${DIR}&u=${U}`);
+    const key = createPublicKey(B.privateKey);
+    expect(nodeVerify('sha256', m, { key, dsaEncoding: 'ieee-p1363' }, Buffer.from(high.slice(6), 'base64url'))).toBe(true);
+    expect(verifySignedPath(uri.replace(t.token, high), mixed, E)).toEqual({ ok: false, status: 403, reason: 'bad-signature' });
+  });
+
+  it.each([
+    ['s = 0', 0n],
+    ['s = n', N],
+  ])('%s → bad-signature', (_n, s) => {
+    const uri = link();
+    const t = (parseSignedPath(uri) as { token: string }).token;
+    expect(verifySignedPath(uri.replace(t, withS(t, s)), mixed, E)).toMatchObject({ status: 403, reason: 'bad-signature' });
+  });
+
+  it('wrong-scheme: ES256 token HMAC-kid-del és HS256 token publicKeys-kid-del; a séma a kid-ből jön', () => {
+    const esOnHmac = buildSignedPath({ privateKey: B.pkcs8, kid: '2026a', u: U, tokenPath: DIR, expires: E, path: FILE });
+    expect(verifySignedPath(esOnHmac, mixed, E)).toEqual({ ok: false, status: 403, reason: 'wrong-scheme' });
+    const hsOnPublic = buildSignedPath({ key: KEY, kid: '2026e', u: U, tokenPath: DIR, expires: E, path: FILE });
+    expect(verifySignedPath(hsOnPublic, mixed, E)).toEqual({ ok: false, status: 403, reason: 'wrong-scheme' });
+  });
+
+  it('wrong-key-kind és unknown-kid a négy térképpel', () => {
+    const browserKidOnContent = buildSignedPath({ privateKey: B.pkcs8, kid: '2026e', tokenPath: CFILE, expires: E, path: CFILE });
+    expect(verifySignedPath(browserKidOnContent, mixed, E)).toMatchObject({ reason: 'wrong-key-kind' });
+    expect(verifySignedPath(link({ privateKey: C.pkcs8, kid: '2026f' }), mixed, E)).toMatchObject({ reason: 'wrong-key-kind' });
+    expect(verifySignedPath(link({ kid: '2026x' }), mixed, E)).toMatchObject({ reason: 'unknown-kid' });
+    expect(verifySignedPath(link({ kid: 'toString' }), mixed, E)).toMatchObject({ reason: 'unknown-kid' });
+  });
+
+  it('másik kulcspárral aláírva, illetve görbén kívüli nyilvános kulccsal → bad-signature', () => {
+    expect(verifySignedPath(link({ privateKey: C.pkcs8 }), mixed, E)).toMatchObject({ reason: 'bad-signature' });
+    const bytes = Buffer.from(B.publicKey, 'base64url');
+    bytes[64] = (bytes[64] as number) ^ 1;
+    const off = appLookupFrom({ elearning: { keys: {}, contentKeys: {}, publicKeys: { '2026e': bytes.toString('base64url') } } });
+    expect(verifySignedPath(link(), off, E)).toMatchObject({ reason: 'bad-signature' });
+  });
+
+  it('a token alakja: nem kanonikus utolsó jel és 85 jel → malformed-token', () => {
+    const uri = link();
+    const t = (parseSignedPath(uri) as { token: string }).token;
+    const nonCanonical = t.slice(0, -1) + String.fromCharCode(t.charCodeAt(t.length - 1) + 1);
+    expect(verifySignedPath(uri.replace(t, nonCanonical), mixed, E)).toMatchObject({ reason: 'malformed-token' });
+    expect(verifySignedPath(uri.replace(t, t.slice(0, -1)), mixed, E)).toMatchObject({ reason: 'malformed-token' });
+    expect(parseSignedPath(uri.replace(t, `ES384-${t.slice(6)}`))).toEqual({ error: 'malformed-token' });
+  });
+
+  it('key és privateKey együtt: TypeError; hibás titkos kulcs: RangeError a kulcs idézése nélkül', () => {
+    const both = { key: KEY, privateKey: B.pkcs8, tokenPath: DIR, expires: E, params: { kid: 'a' } };
+    expect(() => signToken(both as unknown as Parameters<typeof signToken>[0])).toThrow(TypeError);
+    const secret = 'CSAKTESZThibasTitkosKulcs0123456789abcdefghij';
+    expect(() => signToken({ privateKey: secret, tokenPath: DIR, expires: E, params: { kid: 'a' } })).toThrow(RangeError);
+    try {
+      link({ privateKey: secret });
+    } catch (e) {
+      expect((e as Error).message).not.toContain(secret.slice(0, 12));
+    }
+    const ed = generateKeyPairSync('ed25519').privateKey;
+    expect(() => link({ privateKey: ed })).toThrow(RangeError);
   });
 });

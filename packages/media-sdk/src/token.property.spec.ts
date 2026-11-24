@@ -1,10 +1,13 @@
 // Property tesztek (implementációs terv WP1 „Kész, ha”): verify(sign(x)) = ok; bármely egyjeles módosítás a
-// token-szegmensben → nem ok; bucketExpires monoton, órán belül állandó, ≥ now + 5 h.
+// token-szegmensben → nem ok; bucketExpires monoton, órán belül állandó, ≥ now + 5 h. Az ES256 sémára (aszimmetrikus
+// terv WP50): aláír → elfogad, egy bit átírva → bad-signature, magas-S → bad-signature.
 
+import { generateKeyPairSync } from 'node:crypto';
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 import { bucketExpires } from './expires.js';
-import { appLookupFrom, buildSignedPath, verifySignedPath } from './token.js';
+import { appLookupFrom, buildSignedPath, parseSignedPath, verifySignedPath } from './token.js';
+import { rawPublicKey } from './keys.js';
 
 const segChar = fc.constantFrom(...'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_.'.split(''));
 const segment = fc
@@ -95,6 +98,68 @@ describe('media-sdk property', () => {
         expect(r).toMatchObject({ ok: false, status: 403, reason: 'bad-signature' });
       }),
     );
+  });
+
+  describe('ES256 (SPEC 2.)', () => {
+    // CSAK TESZT kulcspár, futáskor generálva; a property a bemenetet variálja, nem a kulcsot.
+    const pair = generateKeyPairSync('ec', { namedCurve: 'prime256v1' });
+    const publicKey = rawPublicKey(pair.privateKey);
+    const N = BigInt('0xffffffff00000000ffffffffffffffffbce6faada7179e84f3b9cac2fc632551');
+    const esLookup = (c: { app: string; kid: string; kind: 'browser' | 'content' }) => {
+      const m = { [c.kid]: publicKey };
+      return appLookupFrom({
+        [c.app]: c.kind === 'browser' ? { keys: {}, contentKeys: {}, publicKeys: m } : { keys: {}, contentKeys: {}, contentPublicKeys: m },
+      });
+    };
+    const esSign = (c: { kid: string; u: string | undefined; tokenPath: string; expires: number; path: string }) =>
+      buildSignedPath({ privateKey: pair.privateKey, kid: c.kid, u: c.u, tokenPath: c.tokenPath, expires: c.expires, path: c.path });
+
+    it('aláír → elfogad tetszőleges érvényes bemenetre, a lejáratig', () => {
+      fc.assert(
+        fc.property(anyCase, fc.nat(), (c, back) => {
+          const now = Math.max(0, c.expires - back);
+          const r = verifySignedPath(esSign(c), esLookup(c), now);
+          expect(r).toMatchObject({ ok: true, app: c.app, kid: c.kid, u: c.u, path: c.path, kind: c.kind });
+        }),
+      );
+    });
+
+    it('egy bit átírva az aláírásban → bad-signature', () => {
+      fc.assert(
+        fc.property(anyCase, fc.nat(), fc.nat(5), (c, pos, bit) => {
+          const uri = esSign(c);
+          const { token } = parseSignedPath(uri) as { token: string };
+          const sig = Buffer.from(token.slice(6), 'base64url');
+          const i = pos % 64;
+          sig[i] = (sig[i] as number) ^ (1 << (bit % 8));
+          const r = verifySignedPath(uri.replace(token, `ES256-${sig.toString('base64url')}`), esLookup(c), c.expires);
+          expect(r).toMatchObject({ ok: false, status: 403, reason: 'bad-signature' });
+        }),
+      );
+    });
+
+    it('az aláírt szöveg (expires) módosítva → bad-signature', () => {
+      fc.assert(
+        fc.property(anyCase, (c) => {
+          const uri = esSign(c).replace(`&expires=${c.expires}/`, `&expires=${c.expires + 1}/`);
+          expect(verifySignedPath(uri, esLookup(c), c.expires)).toEqual({ ok: false, status: 403, reason: 'bad-signature' });
+        }),
+      );
+    });
+
+    it('magas-S változat (s → n − s) → bad-signature', () => {
+      fc.assert(
+        fc.property(anyCase, (c) => {
+          const uri = esSign(c);
+          const { token } = parseSignedPath(uri) as { token: string };
+          const sig = Buffer.from(token.slice(6), 'base64url');
+          const s = BigInt(`0x${sig.subarray(32).toString('hex')}`);
+          Buffer.from((N - s).toString(16).padStart(64, '0'), 'hex').copy(sig, 32);
+          const r = verifySignedPath(uri.replace(token, `ES256-${sig.toString('base64url')}`), esLookup(c), c.expires);
+          expect(r).toEqual({ ok: false, status: 403, reason: 'bad-signature' });
+        }),
+      );
+    });
   });
 
   describe('bucketExpires', () => {

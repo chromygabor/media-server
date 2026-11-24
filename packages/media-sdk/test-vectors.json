@@ -1,6 +1,428 @@
 {
   "version": 1,
   "comment": "A @chromygabor/media-sdk és a médiaszerver njs-ellenőrzésének közös vektorai (terv 4.1–4.4). A kulcsok CSAK TESZT kulcsok. Idők: unix-másodperc. A verify expected.status 200 = elfogadva.",
+  "es256": {
+    "comment": "ES256 séma (SPEC 2.; a médiaszerver kiterjesztése, Bunny-megfelelője nincs). CSAK TESZT kulcspárok: privateKey PKCS#8 DER base64url, publicKey a tömörítetlen P-256 pont base64url-ben. Az ECDSA-aláírás véletlenszerű, ezért bájtos sign-vektor nincs: a tokens rögzített, egyszer generált tokenek (ellenőrzésre), az aláírást oda-vissza próba fedi. A verify alakja a felső szintű verify-é, a keys a publicKeys/contentPublicKeys térképpel.",
+    "kid": "2026e",
+    "privateKey": "MIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQgo9e4EYMSk8FxnKHrgk-PQQVTl46HriNo9s-4WmTvdsChRANCAAQIAJtQDQ4cgy-rW0L00fgpxkRa3Rd_U0cIN-HhMFljEmL1CxKgtChseDjPHPrSnGGHvMkhdQodfg2kxhR1dAkZ",
+    "publicKey": "BAgAm1ANDhyDL6tbQvTR-CnGRFrdF39TRwg34eEwWWMSYvULEqC0KGx4OM8c-tKcYYe8ySF1Ch1-DaTGFHV0CRk",
+    "contentKid": "2026f",
+    "contentPrivateKey": "MIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQgVZSBKb6i8h64T0xmNSwnqItPSbm9g9G8d_raC-7S2xqhRANCAATubiYEr0yF6lGd5l7_R6QyUePBdwjS3-KZVOrINWwp5-tgW8G0oLnZ-Xs4-TxvH_-oR2eJCNJmtv-vvOmVz9ml",
+    "contentPublicKey": "BO5uJgSvTIXqUZ3mXv9HpDJR48F3CNLf4plU6sg1bCnn62BbwbSgudn5ezj5PG8f_6hHZ4kI0ma2_6-86ZXP2aU",
+    "tokens": [
+      {
+        "name": "ES256 könyvtár-token u-val",
+        "tokenPath": "/elearning/t/lessons/ch-01-l01/",
+        "expires": 1795435200,
+        "params": {
+          "kid": "2026e",
+          "u": "0b7d3c1e-5f2a-4c8e-9a61-2f4d8e7b1c90"
+        },
+        "path": "/elearning/t/lessons/ch-01-l01/m01.720p.mp4",
+        "token": "ES256-CKPZOnRvxm7C0opVNyGI7iGwDPvVty3OQPAQlNDaTOsXRQjiObAINvCjG3BsElLXL8AQJr3WsXI1E9q9oR8izQ",
+        "urlPath": "/bcdn_token=ES256-CKPZOnRvxm7C0opVNyGI7iGwDPvVty3OQPAQlNDaTOsXRQjiObAINvCjG3BsElLXL8AQJr3WsXI1E9q9oR8izQ&kid=2026e&token_path=%2Felearning%2Ft%2Flessons%2Fch-01-l01%2F&u=0b7d3c1e-5f2a-4c8e-9a61-2f4d8e7b1c90&expires=1795435200/elearning/t/lessons/ch-01-l01/m01.720p.mp4"
+      },
+      {
+        "name": "ES256 tartalomtoken (fájl, _content/)",
+        "tokenPath": "/elearning/_content/2026.11.23-1.json.gz",
+        "expires": 1795435200,
+        "params": {
+          "kid": "2026f"
+        },
+        "path": "/elearning/_content/2026.11.23-1.json.gz",
+        "token": "ES256-EV_n6vvFXIffZs6POkh38_c11xGCJdYnhc9bllLxWAh-I_j0Is8mKshcH2y-L7rBcKj5eFv2CvqGSaC3zMj8rA",
+        "urlPath": "/bcdn_token=ES256-EV_n6vvFXIffZs6POkh38_c11xGCJdYnhc9bllLxWAh-I_j0Is8mKshcH2y-L7rBcKj5eFv2CvqGSaC3zMj8rA&kid=2026f&token_path=%2Felearning%2F_content%2F2026.11.23-1.json.gz&expires=1795435200/elearning/_content/2026.11.23-1.json.gz"
+      }
+    ],
+    "verify": [
+      {
+        "name": "helyes ES256 könyvtár-token",
+        "requestUri": "/bcdn_token=ES256-CKPZOnRvxm7C0opVNyGI7iGwDPvVty3OQPAQlNDaTOsXRQjiObAINvCjG3BsElLXL8AQJr3WsXI1E9q9oR8izQ&kid=2026e&token_path=%2Felearning%2Ft%2Flessons%2Fch-01-l01%2F&u=0b7d3c1e-5f2a-4c8e-9a61-2f4d8e7b1c90&expires=1795435200/elearning/t/lessons/ch-01-l01/m01.720p.mp4",
+        "keys": {
+          "elearning": {
+            "keys": {
+              "2026a": "tqR4GQBVa+oFSIyk/fRzac2yLwzFH4n7bYeTiEmaSUY="
+            },
+            "contentKeys": {
+              "2026c": "PkRwtRBFpaqcjZAy66OPFIASXZpUcYyKlSbUR9Hv2+M="
+            },
+            "publicKeys": {
+              "2026e": "BAgAm1ANDhyDL6tbQvTR-CnGRFrdF39TRwg34eEwWWMSYvULEqC0KGx4OM8c-tKcYYe8ySF1Ch1-DaTGFHV0CRk"
+            },
+            "contentPublicKeys": {
+              "2026f": "BO5uJgSvTIXqUZ3mXv9HpDJR48F3CNLf4plU6sg1bCnn62BbwbSgudn5ezj5PG8f_6hHZ4kI0ma2_6-86ZXP2aU"
+            }
+          }
+        },
+        "now": 1795431600,
+        "expected": {
+          "status": 200,
+          "app": "elearning",
+          "kid": "2026e",
+          "u": "0b7d3c1e-5f2a-4c8e-9a61-2f4d8e7b1c90",
+          "kind": "browser",
+          "contentType": "video/mp4"
+        }
+      },
+      {
+        "name": "helyes ES256 tartalomtoken (fájl, _content/)",
+        "requestUri": "/bcdn_token=ES256-EV_n6vvFXIffZs6POkh38_c11xGCJdYnhc9bllLxWAh-I_j0Is8mKshcH2y-L7rBcKj5eFv2CvqGSaC3zMj8rA&kid=2026f&token_path=%2Felearning%2F_content%2F2026.11.23-1.json.gz&expires=1795435200/elearning/_content/2026.11.23-1.json.gz",
+        "keys": {
+          "elearning": {
+            "keys": {
+              "2026a": "tqR4GQBVa+oFSIyk/fRzac2yLwzFH4n7bYeTiEmaSUY="
+            },
+            "contentKeys": {
+              "2026c": "PkRwtRBFpaqcjZAy66OPFIASXZpUcYyKlSbUR9Hv2+M="
+            },
+            "publicKeys": {
+              "2026e": "BAgAm1ANDhyDL6tbQvTR-CnGRFrdF39TRwg34eEwWWMSYvULEqC0KGx4OM8c-tKcYYe8ySF1Ch1-DaTGFHV0CRk"
+            },
+            "contentPublicKeys": {
+              "2026f": "BO5uJgSvTIXqUZ3mXv9HpDJR48F3CNLf4plU6sg1bCnn62BbwbSgudn5ezj5PG8f_6hHZ4kI0ma2_6-86ZXP2aU"
+            }
+          }
+        },
+        "now": 1795431600,
+        "expected": {
+          "status": 200,
+          "app": "elearning",
+          "kid": "2026f",
+          "kind": "content",
+          "contentType": "application/gzip"
+        }
+      },
+      {
+        "name": "ES256 lejárat pillanatában még érvényes",
+        "requestUri": "/bcdn_token=ES256-CKPZOnRvxm7C0opVNyGI7iGwDPvVty3OQPAQlNDaTOsXRQjiObAINvCjG3BsElLXL8AQJr3WsXI1E9q9oR8izQ&kid=2026e&token_path=%2Felearning%2Ft%2Flessons%2Fch-01-l01%2F&u=0b7d3c1e-5f2a-4c8e-9a61-2f4d8e7b1c90&expires=1795435200/elearning/t/lessons/ch-01-l01/m01.720p.mp4",
+        "keys": {
+          "elearning": {
+            "keys": {
+              "2026a": "tqR4GQBVa+oFSIyk/fRzac2yLwzFH4n7bYeTiEmaSUY="
+            },
+            "contentKeys": {
+              "2026c": "PkRwtRBFpaqcjZAy66OPFIASXZpUcYyKlSbUR9Hv2+M="
+            },
+            "publicKeys": {
+              "2026e": "BAgAm1ANDhyDL6tbQvTR-CnGRFrdF39TRwg34eEwWWMSYvULEqC0KGx4OM8c-tKcYYe8ySF1Ch1-DaTGFHV0CRk"
+            },
+            "contentPublicKeys": {
+              "2026f": "BO5uJgSvTIXqUZ3mXv9HpDJR48F3CNLf4plU6sg1bCnn62BbwbSgudn5ezj5PG8f_6hHZ4kI0ma2_6-86ZXP2aU"
+            }
+          }
+        },
+        "now": 1795435200,
+        "expected": {
+          "status": 200,
+          "app": "elearning",
+          "kid": "2026e",
+          "u": "0b7d3c1e-5f2a-4c8e-9a61-2f4d8e7b1c90",
+          "kind": "browser",
+          "contentType": "video/mp4"
+        }
+      },
+      {
+        "name": "ES256 lejárt (hiteles) → 410",
+        "requestUri": "/bcdn_token=ES256-CKPZOnRvxm7C0opVNyGI7iGwDPvVty3OQPAQlNDaTOsXRQjiObAINvCjG3BsElLXL8AQJr3WsXI1E9q9oR8izQ&kid=2026e&token_path=%2Felearning%2Ft%2Flessons%2Fch-01-l01%2F&u=0b7d3c1e-5f2a-4c8e-9a61-2f4d8e7b1c90&expires=1795435200/elearning/t/lessons/ch-01-l01/m01.720p.mp4",
+        "keys": {
+          "elearning": {
+            "keys": {
+              "2026a": "tqR4GQBVa+oFSIyk/fRzac2yLwzFH4n7bYeTiEmaSUY="
+            },
+            "contentKeys": {
+              "2026c": "PkRwtRBFpaqcjZAy66OPFIASXZpUcYyKlSbUR9Hv2+M="
+            },
+            "publicKeys": {
+              "2026e": "BAgAm1ANDhyDL6tbQvTR-CnGRFrdF39TRwg34eEwWWMSYvULEqC0KGx4OM8c-tKcYYe8ySF1Ch1-DaTGFHV0CRk"
+            },
+            "contentPublicKeys": {
+              "2026f": "BO5uJgSvTIXqUZ3mXv9HpDJR48F3CNLf4plU6sg1bCnn62BbwbSgudn5ezj5PG8f_6hHZ4kI0ma2_6-86ZXP2aU"
+            }
+          }
+        },
+        "now": 1795435201,
+        "expected": {
+          "status": 410,
+          "reason": "expired"
+        }
+      },
+      {
+        "name": "ES256 lejárt, de rossz aláírás → 403 (az aláírás a lejárat előtt)",
+        "requestUri": "/bcdn_token=ES256-CKPZOnRvxm7C0opVNyGI7iGwDPvVty3OQPAQlNDaTOsXRQjiObAINvCjG3BsElLXL8AQJr3WsXI1E9q9oR8izQ&kid=2026e&token_path=%2Felearning%2Ft%2Flessons%2Fch-01-l01%2F&u=0b7d3c1e-5f2a-4c8e-9a61-2f4d8e7b1c91&expires=1795435200/elearning/t/lessons/ch-01-l01/m01.720p.mp4",
+        "keys": {
+          "elearning": {
+            "keys": {
+              "2026a": "tqR4GQBVa+oFSIyk/fRzac2yLwzFH4n7bYeTiEmaSUY="
+            },
+            "contentKeys": {
+              "2026c": "PkRwtRBFpaqcjZAy66OPFIASXZpUcYyKlSbUR9Hv2+M="
+            },
+            "publicKeys": {
+              "2026e": "BAgAm1ANDhyDL6tbQvTR-CnGRFrdF39TRwg34eEwWWMSYvULEqC0KGx4OM8c-tKcYYe8ySF1Ch1-DaTGFHV0CRk"
+            },
+            "contentPublicKeys": {
+              "2026f": "BO5uJgSvTIXqUZ3mXv9HpDJR48F3CNLf4plU6sg1bCnn62BbwbSgudn5ezj5PG8f_6hHZ4kI0ma2_6-86ZXP2aU"
+            }
+          }
+        },
+        "now": 1795435201,
+        "expected": {
+          "status": 403,
+          "reason": "bad-signature"
+        }
+      },
+      {
+        "name": "ES256 u egy jele átírva",
+        "requestUri": "/bcdn_token=ES256-CKPZOnRvxm7C0opVNyGI7iGwDPvVty3OQPAQlNDaTOsXRQjiObAINvCjG3BsElLXL8AQJr3WsXI1E9q9oR8izQ&kid=2026e&token_path=%2Felearning%2Ft%2Flessons%2Fch-01-l01%2F&u=0b7d3c1e-5f2a-4c8e-9a61-2f4d8e7b1c91&expires=1795435200/elearning/t/lessons/ch-01-l01/m01.720p.mp4",
+        "keys": {
+          "elearning": {
+            "keys": {
+              "2026a": "tqR4GQBVa+oFSIyk/fRzac2yLwzFH4n7bYeTiEmaSUY="
+            },
+            "contentKeys": {
+              "2026c": "PkRwtRBFpaqcjZAy66OPFIASXZpUcYyKlSbUR9Hv2+M="
+            },
+            "publicKeys": {
+              "2026e": "BAgAm1ANDhyDL6tbQvTR-CnGRFrdF39TRwg34eEwWWMSYvULEqC0KGx4OM8c-tKcYYe8ySF1Ch1-DaTGFHV0CRk"
+            },
+            "contentPublicKeys": {
+              "2026f": "BO5uJgSvTIXqUZ3mXv9HpDJR48F3CNLf4plU6sg1bCnn62BbwbSgudn5ezj5PG8f_6hHZ4kI0ma2_6-86ZXP2aU"
+            }
+          }
+        },
+        "now": 1795431600,
+        "expected": {
+          "status": 403,
+          "reason": "bad-signature"
+        }
+      },
+      {
+        "name": "ES256 magas-S változat (s → n − s)",
+        "requestUri": "/bcdn_token=ES256-V-obro92yMMAFTTamydhiDcQGUeHE2HOIpuo8h-1UGzu_HpGn3Ahxq15Dpx2fRJ833tZYchw8qq9xX0kVf5Uww&kid=2026e&token_path=%2Felearning%2Ft%2Flessons%2Fch-01-l01%2F&u=0b7d3c1e-5f2a-4c8e-9a61-2f4d8e7b1c90&expires=1795435200/elearning/t/lessons/ch-01-l01/m01.720p.mp4",
+        "keys": {
+          "elearning": {
+            "keys": {
+              "2026a": "tqR4GQBVa+oFSIyk/fRzac2yLwzFH4n7bYeTiEmaSUY="
+            },
+            "contentKeys": {
+              "2026c": "PkRwtRBFpaqcjZAy66OPFIASXZpUcYyKlSbUR9Hv2+M="
+            },
+            "publicKeys": {
+              "2026e": "BAgAm1ANDhyDL6tbQvTR-CnGRFrdF39TRwg34eEwWWMSYvULEqC0KGx4OM8c-tKcYYe8ySF1Ch1-DaTGFHV0CRk"
+            },
+            "contentPublicKeys": {
+              "2026f": "BO5uJgSvTIXqUZ3mXv9HpDJR48F3CNLf4plU6sg1bCnn62BbwbSgudn5ezj5PG8f_6hHZ4kI0ma2_6-86ZXP2aU"
+            }
+          }
+        },
+        "now": 1795431600,
+        "expected": {
+          "status": 403,
+          "reason": "bad-signature"
+        }
+      },
+      {
+        "name": "ES256 másik kulcspárral (a tartalomkulcs) aláírva",
+        "requestUri": "/bcdn_token=ES256-Hv9VQl-lJ9Fqmo9HgLeofPaaM6VhmMxfN0CeYglvdNNYeR6GkEPom8GdinBg8pzHUfCSXcfMzUdPBfy8lEIS1A&kid=2026e&token_path=%2Felearning%2Ft%2Flessons%2Fch-01-l01%2F&u=0b7d3c1e-5f2a-4c8e-9a61-2f4d8e7b1c90&expires=1795435200/elearning/t/lessons/ch-01-l01/m01.720p.mp4",
+        "keys": {
+          "elearning": {
+            "keys": {
+              "2026a": "tqR4GQBVa+oFSIyk/fRzac2yLwzFH4n7bYeTiEmaSUY="
+            },
+            "contentKeys": {
+              "2026c": "PkRwtRBFpaqcjZAy66OPFIASXZpUcYyKlSbUR9Hv2+M="
+            },
+            "publicKeys": {
+              "2026e": "BAgAm1ANDhyDL6tbQvTR-CnGRFrdF39TRwg34eEwWWMSYvULEqC0KGx4OM8c-tKcYYe8ySF1Ch1-DaTGFHV0CRk"
+            },
+            "contentPublicKeys": {
+              "2026f": "BO5uJgSvTIXqUZ3mXv9HpDJR48F3CNLf4plU6sg1bCnn62BbwbSgudn5ezj5PG8f_6hHZ4kI0ma2_6-86ZXP2aU"
+            }
+          }
+        },
+        "now": 1795431600,
+        "expected": {
+          "status": 403,
+          "reason": "bad-signature"
+        }
+      },
+      {
+        "name": "ES256 nem kanonikus utolsó jel",
+        "requestUri": "/bcdn_token=ES256-CKPZOnRvxm7C0opVNyGI7iGwDPvVty3OQPAQlNDaTOsXRQjiObAINvCjG3BsElLXL8AQJr3WsXI1E9q9oR8izR&kid=2026e&token_path=%2Felearning%2Ft%2Flessons%2Fch-01-l01%2F&u=0b7d3c1e-5f2a-4c8e-9a61-2f4d8e7b1c90&expires=1795435200/elearning/t/lessons/ch-01-l01/m01.720p.mp4",
+        "keys": {
+          "elearning": {
+            "keys": {
+              "2026a": "tqR4GQBVa+oFSIyk/fRzac2yLwzFH4n7bYeTiEmaSUY="
+            },
+            "contentKeys": {
+              "2026c": "PkRwtRBFpaqcjZAy66OPFIASXZpUcYyKlSbUR9Hv2+M="
+            },
+            "publicKeys": {
+              "2026e": "BAgAm1ANDhyDL6tbQvTR-CnGRFrdF39TRwg34eEwWWMSYvULEqC0KGx4OM8c-tKcYYe8ySF1Ch1-DaTGFHV0CRk"
+            },
+            "contentPublicKeys": {
+              "2026f": "BO5uJgSvTIXqUZ3mXv9HpDJR48F3CNLf4plU6sg1bCnn62BbwbSgudn5ezj5PG8f_6hHZ4kI0ma2_6-86ZXP2aU"
+            }
+          }
+        },
+        "now": 1795431600,
+        "expected": {
+          "status": 403,
+          "reason": "malformed-token"
+        }
+      },
+      {
+        "name": "ES256 85 jeles token",
+        "requestUri": "/bcdn_token=ES256-CKPZOnRvxm7C0opVNyGI7iGwDPvVty3OQPAQlNDaTOsXRQjiObAINvCjG3BsElLXL8AQJr3WsXI1E9q9oR8iz&kid=2026e&token_path=%2Felearning%2Ft%2Flessons%2Fch-01-l01%2F&u=0b7d3c1e-5f2a-4c8e-9a61-2f4d8e7b1c90&expires=1795435200/elearning/t/lessons/ch-01-l01/m01.720p.mp4",
+        "keys": {
+          "elearning": {
+            "keys": {
+              "2026a": "tqR4GQBVa+oFSIyk/fRzac2yLwzFH4n7bYeTiEmaSUY="
+            },
+            "contentKeys": {
+              "2026c": "PkRwtRBFpaqcjZAy66OPFIASXZpUcYyKlSbUR9Hv2+M="
+            },
+            "publicKeys": {
+              "2026e": "BAgAm1ANDhyDL6tbQvTR-CnGRFrdF39TRwg34eEwWWMSYvULEqC0KGx4OM8c-tKcYYe8ySF1Ch1-DaTGFHV0CRk"
+            },
+            "contentPublicKeys": {
+              "2026f": "BO5uJgSvTIXqUZ3mXv9HpDJR48F3CNLf4plU6sg1bCnn62BbwbSgudn5ezj5PG8f_6hHZ4kI0ma2_6-86ZXP2aU"
+            }
+          }
+        },
+        "now": 1795431600,
+        "expected": {
+          "status": 403,
+          "reason": "malformed-token"
+        }
+      },
+      {
+        "name": "ES256 token HMAC-kid-del → wrong-scheme",
+        "requestUri": "/bcdn_token=ES256-6Nh4TEy-hjEfCqh89Z8HE8hioNl0xOMqmDR_EaqtvbZ62pMDJY-gcoGdtXhzp5SQTJ49TB6hoNW86ifZzLS3yg&kid=2026a&token_path=%2Felearning%2Ft%2Flessons%2Fch-01-l01%2F&u=0b7d3c1e-5f2a-4c8e-9a61-2f4d8e7b1c90&expires=1795435200/elearning/t/lessons/ch-01-l01/m01.720p.mp4",
+        "keys": {
+          "elearning": {
+            "keys": {
+              "2026a": "tqR4GQBVa+oFSIyk/fRzac2yLwzFH4n7bYeTiEmaSUY="
+            },
+            "contentKeys": {
+              "2026c": "PkRwtRBFpaqcjZAy66OPFIASXZpUcYyKlSbUR9Hv2+M="
+            },
+            "publicKeys": {
+              "2026e": "BAgAm1ANDhyDL6tbQvTR-CnGRFrdF39TRwg34eEwWWMSYvULEqC0KGx4OM8c-tKcYYe8ySF1Ch1-DaTGFHV0CRk"
+            },
+            "contentPublicKeys": {
+              "2026f": "BO5uJgSvTIXqUZ3mXv9HpDJR48F3CNLf4plU6sg1bCnn62BbwbSgudn5ezj5PG8f_6hHZ4kI0ma2_6-86ZXP2aU"
+            }
+          }
+        },
+        "now": 1795431600,
+        "expected": {
+          "status": 403,
+          "reason": "wrong-scheme"
+        }
+      },
+      {
+        "name": "HS256 token publicKeys-kid-del → wrong-scheme",
+        "requestUri": "/bcdn_token=HS256-ppG6GkQfJjIu0zT_VuyfrK01t483VB47YX-dQ87YQDM&kid=2026e&token_path=%2Felearning%2Ft%2Flessons%2Fch-01-l01%2F&u=0b7d3c1e-5f2a-4c8e-9a61-2f4d8e7b1c90&expires=1795435200/elearning/t/lessons/ch-01-l01/m01.720p.mp4",
+        "keys": {
+          "elearning": {
+            "keys": {
+              "2026a": "tqR4GQBVa+oFSIyk/fRzac2yLwzFH4n7bYeTiEmaSUY="
+            },
+            "contentKeys": {
+              "2026c": "PkRwtRBFpaqcjZAy66OPFIASXZpUcYyKlSbUR9Hv2+M="
+            },
+            "publicKeys": {
+              "2026e": "BAgAm1ANDhyDL6tbQvTR-CnGRFrdF39TRwg34eEwWWMSYvULEqC0KGx4OM8c-tKcYYe8ySF1Ch1-DaTGFHV0CRk"
+            },
+            "contentPublicKeys": {
+              "2026f": "BO5uJgSvTIXqUZ3mXv9HpDJR48F3CNLf4plU6sg1bCnn62BbwbSgudn5ezj5PG8f_6hHZ4kI0ma2_6-86ZXP2aU"
+            }
+          }
+        },
+        "now": 1795431600,
+        "expected": {
+          "status": 403,
+          "reason": "wrong-scheme"
+        }
+      },
+      {
+        "name": "HS256 tartalomtoken contentPublicKeys-kid-del → wrong-scheme",
+        "requestUri": "/bcdn_token=HS256-mHYWLIDvMlvkL_76F-3Bhix8ajwig3RfFv0xoV2tTXQ&kid=2026f&token_path=%2Felearning%2F_content%2F2026.11.23-1.json.gz&expires=1795435200/elearning/_content/2026.11.23-1.json.gz",
+        "keys": {
+          "elearning": {
+            "keys": {
+              "2026a": "tqR4GQBVa+oFSIyk/fRzac2yLwzFH4n7bYeTiEmaSUY="
+            },
+            "contentKeys": {
+              "2026c": "PkRwtRBFpaqcjZAy66OPFIASXZpUcYyKlSbUR9Hv2+M="
+            },
+            "publicKeys": {
+              "2026e": "BAgAm1ANDhyDL6tbQvTR-CnGRFrdF39TRwg34eEwWWMSYvULEqC0KGx4OM8c-tKcYYe8ySF1Ch1-DaTGFHV0CRk"
+            },
+            "contentPublicKeys": {
+              "2026f": "BO5uJgSvTIXqUZ3mXv9HpDJR48F3CNLf4plU6sg1bCnn62BbwbSgudn5ezj5PG8f_6hHZ4kI0ma2_6-86ZXP2aU"
+            }
+          }
+        },
+        "now": 1795431600,
+        "expected": {
+          "status": 403,
+          "reason": "wrong-scheme"
+        }
+      },
+      {
+        "name": "publicKeys-kid _content/-re → wrong-key-kind",
+        "requestUri": "/bcdn_token=ES256-K72QiOrFp2UMzNFdeHQ5_dp5TSaAE7q0jWz_ajupY2xILQlUWdpxCB7tJ3HZaaaqlP_YU5B18sbJZrDqSZpJYQ&kid=2026e&token_path=%2Felearning%2F_content%2F2026.11.23-1.json.gz&expires=1795435200/elearning/_content/2026.11.23-1.json.gz",
+        "keys": {
+          "elearning": {
+            "keys": {
+              "2026a": "tqR4GQBVa+oFSIyk/fRzac2yLwzFH4n7bYeTiEmaSUY="
+            },
+            "contentKeys": {
+              "2026c": "PkRwtRBFpaqcjZAy66OPFIASXZpUcYyKlSbUR9Hv2+M="
+            },
+            "publicKeys": {
+              "2026e": "BAgAm1ANDhyDL6tbQvTR-CnGRFrdF39TRwg34eEwWWMSYvULEqC0KGx4OM8c-tKcYYe8ySF1Ch1-DaTGFHV0CRk"
+            },
+            "contentPublicKeys": {
+              "2026f": "BO5uJgSvTIXqUZ3mXv9HpDJR48F3CNLf4plU6sg1bCnn62BbwbSgudn5ezj5PG8f_6hHZ4kI0ma2_6-86ZXP2aU"
+            }
+          }
+        },
+        "now": 1795431600,
+        "expected": {
+          "status": 403,
+          "reason": "wrong-key-kind"
+        }
+      },
+      {
+        "name": "contentPublicKeys-kid böngészős útvonalra → wrong-key-kind",
+        "requestUri": "/bcdn_token=ES256-Nx0W5z3vQAWhM6Ef98OxVFvqaKW5jrLOUK77NIbwlIoENG9sTKq9zGCf9P6mnhGfNYbe2DQa32Lr_y-YyWOmUQ&kid=2026f&token_path=%2Felearning%2Ft%2Flessons%2Fch-01-l01%2F&u=0b7d3c1e-5f2a-4c8e-9a61-2f4d8e7b1c90&expires=1795435200/elearning/t/lessons/ch-01-l01/m01.720p.mp4",
+        "keys": {
+          "elearning": {
+            "keys": {
+              "2026a": "tqR4GQBVa+oFSIyk/fRzac2yLwzFH4n7bYeTiEmaSUY="
+            },
+            "contentKeys": {
+              "2026c": "PkRwtRBFpaqcjZAy66OPFIASXZpUcYyKlSbUR9Hv2+M="
+            },
+            "publicKeys": {
+              "2026e": "BAgAm1ANDhyDL6tbQvTR-CnGRFrdF39TRwg34eEwWWMSYvULEqC0KGx4OM8c-tKcYYe8ySF1Ch1-DaTGFHV0CRk"
+            },
+            "contentPublicKeys": {
+              "2026f": "BO5uJgSvTIXqUZ3mXv9HpDJR48F3CNLf4plU6sg1bCnn62BbwbSgudn5ezj5PG8f_6hHZ4kI0ma2_6-86ZXP2aU"
+            }
+          }
+        },
+        "now": 1795431600,
+        "expected": {
+          "status": 403,
+          "reason": "wrong-key-kind"
+        }
+      }
+    ]
+  },
   "sign": [
     {
       "name": "könyvtár-token u-val (Bunny hivatalos Node-példa)",

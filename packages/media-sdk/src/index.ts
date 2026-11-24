@@ -17,6 +17,7 @@ export type {
   ParseError,
   ParsedSignedPath,
   SignTokenInput,
+  SigningKey,
   TokenParams,
   VerifyFailureReason,
   VerifyResult,
@@ -33,7 +34,7 @@ export {
   isSafeTokenPath,
 } from './path.js';
 export type { MediaKind, MediaPathInfo } from './path.js';
-export { KEY_ID_RE, KEY_RE, isValidKey, isValidKeyId } from './keys.js';
+export { KEY_ID_RE, KEY_RE, PUBLIC_KEY_RE, isValidKey, isValidKeyId, isValidPrivateKey, isValidPublicKey } from './keys.js';
 export { CONTENT_TOKEN_TTL_SECONDS, MEDIA_URL_VERSION_LENGTH, createUrlSigner } from './signer.js';
 export type {
   SignAsset,

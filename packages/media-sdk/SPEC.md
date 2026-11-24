@@ -17,12 +17,15 @@ Minden állítás mögött zárójelben a teszt, amely fedi (a kiemelésig a mon
 | **K** | `src/cli/cli.spec.ts` (a `media-keys` / `media-sign` parancs: kulcsgenerálás, próbalink) és `src/apps-config.spec.ts` (`validateAppsFile`) |
 | **P** | a fogyasztó feltöltő eszközének tesztjei |
 
+Az `es256` blokk vektorait (ES256 séma) ma a TS futtatja (`src/vectors.spec.ts`); az njs, a konténer CLI-je és a hamis
+szerver a séma szerveroldali és `./testing`-beli bekötésével veszi át őket.
+
 A teszt nélküli állítás jelölése: *(teszt nélkül)*, egy fél mondatos indokkal. Minden idő unix-másodperc.
 
 ## 1. URL-alak
 
 ```
-<alap-URL>/bcdn_token=HS256-<sig>&kid=<kid>&token_path=<kódolt előtag>[&u=<u>]&expires=<n>/<app>/<assetKey>[?…]
+<alap-URL>/bcdn_token=<séma>-<sig>&kid=<kid>&token_path=<kódolt előtag>[&u=<u>]&expires=<n>/<app>/<assetKey>[?…]
 ```
 
 - Az első szegmens `/bcdn_token=`-nel kezdődik, a következő `/`-ig tart; utána a kért útvonal (`path`). (V, T)
@@ -33,8 +36,10 @@ A teszt nélküli állítás jelölése: *(teszt nélkül)*, egy fél mondatos i
   (`kid`, `token_path`, `u`). (T: „a paraméterek sorrendje nem kötött”)
 - Az értékek **kanonikusan** kódoltak: `encodeURIComponent(érték) === nyers`, üres érték nincs; különben
   `malformed-param`. A `token_path` kódolt (`/` → `%2F`). (V: „nem kanonikus kódolás”, „kódolatlan token_path”; T)
-- `token`: `HS256-` + pontosan 43 Base64URL-jel (`[A-Za-z0-9_-]`, kitöltés nélkül); más `malformed-token`. Az
-  IP-kötés `HS256-1-` alakja nem elfogadott. (V: „csonka token”, „IP-kötés jelzője”; T)
+- `token`: `HS256-` + pontosan 43 Base64URL-jel (`[A-Za-z0-9_-]`, kitöltés nélkül), **vagy** `ES256-` + pontosan 86
+  Base64URL-jel, amelynek utolsó jele kanonikus (a 64 bájt kitöltő bitjei nullák: `[AQgw]`); más `malformed-token`. Az
+  IP-kötés `HS256-1-` alakja nem elfogadott. (V: „csonka token”, „IP-kötés jelzője”, `es256`: „ES256 nem kanonikus
+  utolsó jel”, „ES256 85 jeles token”; T)
 - `expires`: `0` vagy vezető nulla nélküli, legfeljebb 12 jegyű decimális szám; más `malformed-expires`. (V, T)
 - `kid` és `u`: `[A-Za-z0-9._-]{1,128}`; más `malformed-param`. (T; N: fast-check paritás)
 - A query (`?…`) figyelmen kívül marad, az ellenőrzésben és a kiszolgálásban sem számít (a `?v=` gyorsítótár-törő
@@ -45,9 +50,16 @@ A teszt nélküli állítás jelölése: *(teszt nélkül)*, egy fél mondatos i
 ## 2. A token
 
 ```
-token        = "HS256-" + Base64URL(HMAC-SHA256(kulcs, token_path + expires + signing_data))
+token        = "HS256-" + Base64URL(HMAC-SHA256(kulcs, M))                     (HMAC, Bunny-kompatibilis)
+             | "ES256-" + Base64URL(r ‖ s)                                     (ECDSA P-256 + SHA-256 az M-en)
+M            = token_path + expires + signing_data
 signing_data = "kid=<kid>&token_path=<token_path>[&u=<u>]"      (rendezett, kódolatlan értékek)
 ```
+
+Két séma van, mindkettő elsőrangú. **A séma mindig a `kid`-ből jön, soha nem a tokenből:** a `keys`/`contentKeys`
+`kid`-je `HS256-`, a `publicKeys`/`contentPublicKeys` `kid`-je `ES256-` tokent kíván (6. pont); eltérésnél
+`wrong-scheme`. Így algoritmus-csere nem lehetséges. (V: `es256` „… wrong-scheme” esetek; T) Az ES256 séma a médiaszerver
+kiterjesztése, Bunny-megfelelője nincs; a Bunny-kompatibilis séma a HS256.
 
 - A Bunny V2 directory-token algoritmusa, IP nélkül, a mi két paraméterünkkel (`kid`, `u`). A két Bunny-forrású
   aláírási vektor bájtra egyezik a Bunny hivatalos Node-példájának kimenetével. (V: `source: bunny-official-nodejs@…`)
@@ -58,19 +70,30 @@ signing_data = "kid=<kid>&token_path=<token_path>[&u=<u>]"      (rendezett, kód
 - Az aláírás ellenőrzése **időállandó** összehasonlítással történik. (teszt nélkül: az időállandóság, mert egy
   időmérő teszt a CI-ban maga volna ingadozó; a token hossza rögzített, így a hossz sem szivárog. T csak az eredményt
   nézi)
+- **ES256:** ECDSA a P-256 görbén SHA-256-tal, az aláírt szöveg ugyanaz az `M` (a `kid` benne van, így egy aláírás
+  nem vihető át másik `kid`-re). Az aláírás 64 bájt: `r ‖ s`, 32–32 bájt big-endian (IEEE P1363), Base64URL-ben 86 jel.
+  A nyilvános kulcs a tömörítetlen pont (6. pont). (V: `es256` „helyes ES256 …”; T)
+- **Low-S kötelező:** `s ≤ n/2` (`n` a P-256 rendje). Az aláíró normalizál (`s > n/2` esetén `n − s`), az ellenőrző a
+  magas-S aláírást `bad-signature`-rel elutasítja, mert a WebCrypto/OpenSSL a `(r, n − s)` alakot is elfogadná, és egy
+  linknek két írásmódja lenne. Az `r` vagy `s` nulla, illetve `≥ n` értéke `bad-signature`. (V: `es256` „ES256 magas-S
+  változat”; T: property-teszt)
+- Az ECDSA-aláírás véletlenszerű: ugyanarra a bemenetre két aláírás különbözik, ezért ES256-ra nincs bájtos aláírási
+  vektor; az aláírást oda-vissza próba fedi (aláír → elfogad). (T)
 
 ### 2.1 Két tokenfajta
 
 | | Böngészős token | Tartalomtoken |
 | --- | --- | --- |
-| Kulcs | `apps[app].keys[kid]` | `apps[app].contentKeys[kid]` |
+| Kulcs (HS256) | `apps[app].keys[kid]` | `apps[app].contentKeys[kid]` |
+| Nyilvános kulcs (ES256) | `apps[app].publicKeys[kid]` | `apps[app].contentPublicKeys[kid]` |
 | Útvonal | nem `_`-os (1. app utáni szegmens nem `_`-sal kezdődik) | `/<app>/_content/<név>.json.gz` |
 | `token_path` | `/<app>/…/` könyvtár, **`/`-re végződik** | **pontosan** a kért fájl |
 | `u` | ajánlott (belső felhasználó-azonosító; napló, kapcsolatkorlát) | **nem szabad** (`u-not-allowed`) |
 | Lejárat | a hívó dönti (ajánlott: `min(a felhasználó tokenjének exp-je, most + 24 óra)`) | rövid (ajánlott: 5 perc) |
 
-(V: „helyes könyvtár-token”, „helyes tartalomtoken”, „_content/ böngészős kulccsal”, „böngészős útvonal
-tartalomkulccsal”, „tartalomtoken könyvtár-token_path-szal”, „tartalomtoken u-val”; D: „_content/” blokk.
+A kulcsfajtát (böngészős vagy tartalom) a négy térkép közül az adja, amelyikben a `kid` szerepel; egy `kid` appon belül
+pontosan egy térképben lehet. (V: „helyes könyvtár-token”, „helyes tartalomtoken”, „_content/ böngészős kulccsal”, „böngészős útvonal
+tartalomkulccsal”, `es256`: „publicKeys-kid _content/-re”, „contentPublicKeys-kid böngészős útvonalra”, „tartalomtoken könyvtár-token_path-szal”, „tartalomtoken u-val”; D: „_content/” blokk.
 A lejárati ajánlások, ahogy a `createUrlSigner` alkalmazza: T: `src/signer.spec.ts` „expires = min(tokenExp, most +
 maxTtl)…”, „… expires = most + 300”.)
 
@@ -81,7 +104,7 @@ maxTtl)…”, „… expires = most + 300”.)
   „token_path másik appé”, „token_path a gyökér”, „token_path ..-tal”; T: `isPrefixOf`; D: „token_path-on kívül”)
 - A `u` nem titok (olvasható), de aláírt: módosítása `bad-signature`. (V: „u módosítva”; D: „módosított u”)
 - A `kid` egyben a sémaváltás helye: új formátum = új `kid` (külön verzió-paraméter nincs). (teszt nélkül: konvenció
-  a jövőbeli formátumváltáshoz, ma nincs második séma)
+  a jövőbeli formátumváltáshoz; az ES256 séma is így, új térképben és új `kid`-del jött)
 - Az aláíró (`buildSignedPath`) **csak** a szerver által elfogadható linket írja alá, különben `RangeError`.
   (T: „buildSignedPath … elutasít”; N: aláírt URI-k paritása)
 
@@ -116,8 +139,9 @@ A szerver (és a `verifySignedPath`) pontosan ebben a sorrendben dönt; az első
 | 2 | az útvonal alakja (3. pont) | `403` | `unsafe-path` |
 | 3 | kiterjesztés-tábla | `404` | `not-servable` |
 | 4 | app az `apps.json`-ban (saját mező) | `403` | `unknown-app` |
-| 5 | `kid` a fájlhoz illő kulcsfajtában | `403` | `unknown-kid` (egyikben sincs), `wrong-key-kind` (a másikban van) |
-| 6 | HMAC | `403` | `bad-signature` |
+| 5 | `kid` a fájlhoz illő kulcsfajtában (`keys` ∪ `publicKeys`, illetve `contentKeys` ∪ `contentPublicKeys`) | `403` | `unknown-kid` (egyikben sincs), `wrong-key-kind` (a másik fajtában van) |
+| 6a | a token előtagja a `kid` sémája (`keys`/`contentKeys` → `HS256-`, `publicKeys`/`contentPublicKeys` → `ES256-`) | `403` | `wrong-scheme` |
+| 6b | aláírás: HMAC időállandó összevetéssel; ES256 low-S + ellenőrzés | `403` | `bad-signature` |
 | 7 | `token_path` (2.1) | `403` | `token-path-app`, `token-path-shape`, `u-not-allowed`, `outside-token-path` |
 | 8 | lejárat: lejárt, ha `now > expires` | `410` | `expired` |
 | 9 | a fájl létezése (nginx) | `404` | — |
@@ -129,6 +153,8 @@ D: „elutasítás” blokk, „nem létező fájl érvényes tokennel → 404�
 
 - A `410` csak hiteles tokenre jár: a hamis, lejárt link `403`. (V, T, D)
 - A `404` (3. lépés) a token előtt jön: a tábla nyilvános, nem szivárogtat. (V)
+- A `wrong-scheme` csak egy ismert `kid` sémáját árulja el, ami nem titok; a naplóban elválasztja a félrekonfigurált
+  appot a hamisítástól. (V: `es256`)
 - Hibás vagy hiányzó `apps.json` mellett **minden** kérés `403 apps-invalid`. (N)
 - Az ellenőrzés belső kivétele `403 internal-error` (kivétel nem kerülhet a hibanaplóba). (N)
 
@@ -141,6 +167,7 @@ További HTTP-válaszok a szervertől:
 | nem `GET` / `HEAD` / `OPTIONS` | `405` (D: „POST → 405”) |
 | `200` / `206` / `304` / `416` | az nginx statikus motorja: `Range`, `If-Range`, `If-None-Match`, `ETag`, `Last-Modified`, `HEAD` (D) |
 | érvénytelen token túl gyakran ugyanarról az IP-ről | `429` (5. pont) (D) |
+| ismételt hibás ES256-aláírás ugyanarról az IP-ről (**elhagyható**, szerveroldali védelem a drágább ellenőrzés előtt) | `429`, a naplóban `reason: blocked`; a `verifySignedPath` és a `./testing` hamis szervere nem számol (D) |
 | felhasználónkénti / appenkénti kapcsolatkorlát túllépve | `503` (D: „limit_conn: ugyanazzal az u-val…”, „limit_conn appenként 40…”) |
 
 A hibaválaszok törzse rövid szöveg, `Content-Type: text/plain`: `forbidden\n` (403), `not found\n` (404),
@@ -189,8 +216,10 @@ pedig minden kérés `403 apps-invalid`. (D: „check-apps.js”; N: „hibás v
 {
   "elearning": {
     "dir": "elearning",
-    "keys":        { "2026a": "<legalább 43 jeles base64(url)>" },
-    "contentKeys": { "2026c": "<…>" },
+    "keys":              { "2026a": "<legalább 43 jeles base64(url)>" },
+    "contentKeys":       { "2026c": "<…>" },
+    "publicKeys":        { "2026e": "<87 jeles base64url, tömörítetlen P-256 pont>" },
+    "contentPublicKeys": { "2026f": "<…>" },
     "origins": ["https://elearning.example"],
     "corp": "same-site"
   }
@@ -201,17 +230,23 @@ pedig minden kérés `403 apps-invalid`. (D: „check-apps.js”; N: „hibás v
 | --- | --- |
 | app-név | biztonságos szegmens, nem `_`-sal kezdődik; legalább egy app kell |
 | `dir` (kötelező) | `.` vagy biztonságos szegmensekből álló relatív út; a fájl: `/srv/media/<dir>/<assetKey>` (`.` → `/srv/media/<assetKey>`); több app osztozhat egy `dir`-en |
-| `keys`, `contentKeys` (kötelező objektumok, lehetnek üresek) | `kid` → kulcs; `kid`: `[A-Za-z0-9._-]{1,128}`; kulcs: `^[A-Za-z0-9+/_-]{43,}={0,2}$`; egy appon belül a két `kid`-halmaz diszjunkt |
+| `keys`, `contentKeys` (kötelező objektumok, lehetnek üresek) | `kid` → kulcs (HS256); `kid`: `[A-Za-z0-9._-]{1,128}`; kulcs: `^[A-Za-z0-9+/_-]{43,}={0,2}$` |
+| `publicKeys`, `contentPublicKeys` (elhagyható objektumok; hiányuk = üres) | `kid` → nyilvános kulcs (ES256): a tömörítetlen P-256 pont (65 bájt: `0x04` ‖ X ‖ Y) kanonikus base64url-ben, `^B[A-P][A-Za-z0-9_-]{84}[AEIMQUYcgkosw048]$` (87 jel); tömörített pont, SPKI, JWK, PEM nem. A pontnak a görbén kell lennie (deploy előtt ellenőrizve). Ugyanaz a nyilvános kulcs nem lehet a `publicKeys`-ben és a `contentPublicKeys`-ben is |
+| `kid`-halmazok | egy appon belül a négy térkép `kid`-halmaza páronként diszjunkt |
 | `origins` (elhagyható) | tömb, elemei `http(s)://host[:port]` útvonal és záró `/` nélkül; `*` nem |
 | `corp` (elhagyható) | `same-site` (alapérték), `same-origin` vagy `cross-origin` |
 
-(N: „validateApps” blokk, „dir \".\" → a fájl közvetlenül a /srv/media alatt”, „böngészős token u-val: … fájl a dir
+(K: `src/apps-config.spec.ts` a nyilvános kulcsok szabályaira és a `checkPublicKeys()` görbe-ellenőrzésére; N: „validateApps” blokk, „dir \".\" → a fájl közvetlenül a /srv/media alatt”, „böngészős token u-val: … fájl a dir
 alatt”, „közös dir…”: két app egy `dir`-en, a CORP és a CORS appenként; D: „másik app saját linkje”, „`dir: \".\"` app”; C: „apps.json-validálás: njs validateApps = media-sdk
 validateAppsFile”, ebben a közös `dir` is.) A csomag a szabályokat a `@chromygabor/media-sdk/apps-config`
 `validateAppsFile()`-jával adja (az elfogadás és a hibák száma az njs-ével azonos).
 
 - Kulcs generálása: 32 véletlen bájt base64url-szövege (43 jel). (K: „media-keys”) Parancs: `media-keys` (a monorepóban
   `pnpm media-server:keys`); programból: `generateKey()` a `./apps-config`-ból.
+- ES256 kulcspár: **az app generálja** (`media-keys --keypair <app> [--content]`; programból `generateKeyPair()`), a
+  titkos kulcs (PKCS#8 DER base64url) soha nem hagyja el az appot; az üzemeltetőhöz csak a `kid`, a fajta és a
+  nyilvános kulcs megy, aki `media-keys --register <app> --kid <kid> --public-key <…> [--content] --write <apps.json>`
+  paranccsal veszi fel (programból `addPublicKey()`; meglévő `kid` felülírása nincs). (K)
 - A kulcs titok: **nem szabad** repóba, naplóba, hibaüzenetbe kerülnie. Kivétel a `media-keys` stdout-ja: az új
   kulcsot szándékosan kiírja (az `apps.json`-részlet és a backend env-sorai, 9. pont); hibaüzenetbe (stderr) a kulcs
   soha nem kerül. (D: a napló nem tartalmazza a kulcsokat, „check-apps.js: szintaktikailag hibás fájl…” – a QuickJS-motoros futás ismert hibaként jelölt, a deploy az

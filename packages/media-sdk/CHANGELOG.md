@@ -6,11 +6,35 @@ változatlansága a `test-vectors.json` vektoraival ellenőrzött; ennek megtör
 
 ## [Kiadatlan]
 
+A következő kiadás `0.2.0` (0.x alatt a minor jelzi a törő változást, lásd „Törő”). A `test-vectors.json` `version`
+mezője `1` marad: a meglévő vektorok bájtra változatlanok, az `es256` blokk új.
+
+### Törő
+- `VerifyFailureReason` új tagja: `wrong-scheme` (SPEC 4., 6a lépés). Egy fogyasztó kimerítő (`never`-re futó)
+  `switch`-e a típusellenőrzésnél elbukik, amíg az új esetet fel nem veszi.
+- `SignTokenInput` és `BuildSignedPathInput` interfész helyett típus (`SigningKey &` …): a `{ key }` vagy a
+  `{ privateKey }` pontosan az egyike kell; mindkettő `TypeError`. A meglévő `{ key }`-es hívások változatlanul
+  fordulnak.
+
 ### Változott
 - Új név: `@cry/media-sdk` → `@chromygabor/media-sdk` (docs/media-sdk-kiemeles-terv.md D90: a GitHub Packages a
   hatókört a repó tulajdonosához köti). A könyvtár marad `packages/media-sdk`; a felület és a vektorok változatlanok.
 
 ### Új
+- **ES256 séma** (SPEC 1., 2., 2.1, 4., 6.; aszimmetrikus aláírás, aszimmetrikus terv
+  WP50): `ES256-` + 86 jeles token (ECDSA P-256 + SHA-256 ugyanazon az aláírt szövegen, `r ‖ s`, low-S), a
+  médiaszerver kiterjesztése, Bunny-megfelelője nincs; a HS256 változatlanul megmarad. A séma a `kid`-ből jön:
+  - `signToken` / `buildSignedPath`: `{ privateKey }` (PKCS#8 DER base64url szöveg vagy `KeyObject`), low-S-re
+    normalizált, véletlenszerű aláírás; új típus: `SigningKey`;
+  - `verifySignedPath`: az `AppKeys` új, elhagyható mezői `publicKeys` / `contentPublicKeys`; 6a lépés
+    (`wrong-scheme`), 6b ES256-ra low-S + `node:crypto.verify`, szinkron; a görbén kívüli nyilvános kulcs
+    `bad-signature`;
+  - `PUBLIC_KEY_RE`, `isValidPublicKey()`, `isValidPrivateKey()` (`.`);
+  - `./apps-config`: `AppEntry.publicKeys?` / `contentPublicKeys?`, a `validateAppsFile` a négy diszjunkt
+    `kid`-halmazzal és a két fajtában ismétlődő nyilvános kulcs tilalmával; `checkPublicKeys()` (görbe-ellenőrzés),
+    `generateKeyPair()`, `publicKeyOf()`, `addPublicKey()` (felülírás nincs), `defaultKid(content, now, asymmetric)`
+    (`<év>e` / `<év>f`);
+  - `test-vectors.json`: új `es256` blokk CSAK TESZT kulcspárokkal, két rögzített tokennel és 15 verify-vektorral.
 - `./testing` alútvonal (`src/testing/`; csomagterv WP35): `startFakeMediaServer({ apps, root,
   now?, port?, host?, routes? })` – hamis médiaszerver `node:http`-n a SPEC szabályaival (ellenőrzési sorrend és
   státuszkódok, kiterjesztés-tábla, `<root>/<dir>/<assetKey>`, `Range` → `206`/`416`, `HEAD`, `ETag`/`304`,
@@ -39,6 +63,8 @@ változatlansága a `test-vectors.json` vektoraival ellenőrzött; ennek megtör
   ezeket használja; a backend `MEDIA_CONTENT_TYPES`-másolata helyett a csomag táblája.
 
 ### Javítva
+- `validateAppsFile`: a `kid`-ütközés hibaszövege „a kid több kulcstérképben is szerepel” (a négy térkép miatt); a
+  `__proto__` kid ütközése az njs `validateApps`-ében is hiba (a szerver WP39-e), így itt már nincs szándékos eltérés.
 - A `media-keys` / `media-sign` a hibás JSON-ú `apps.json` hibaüzenetében nem idéz a fájl szövegéből (a korábbi
   `server` szkript a `JSON.parse` üzenetét továbbadta, és a Node ebben a bemenetből, így a kulcsokból is
   idézett); az üzenet `<fájl>: az apps.json nem érvényes JSON`, legfeljebb sorral és oszloppal.

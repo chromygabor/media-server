@@ -1,9 +1,21 @@
 // A közös vektorok (../test-vectors.json) a TS-megvalósításon; ugyanezt a fájlt olvassa a médiaszerver
-// njs-tesztje (implementációs terv WP1, WP2).
+// njs-tesztje (implementációs terv WP1, WP2). Az `es256` blokk (aszimmetrikus terv WP50): rögzített ES256-tokenek és
+// verify-vektorok; bájtos sign-vektor nincs (az ECDSA véletlenszerű), az aláírást oda-vissza próba fedi.
 
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { appLookupFrom, buildSignedPath, signToken, verifySignedPath, type AppKeys, type TokenParams } from './index.js';
+import { publicKeyOf } from './apps-config.js';
+import {
+  appLookupFrom,
+  buildSignedPath,
+  isValidPrivateKey,
+  parseSignedPath,
+  PUBLIC_KEY_RE,
+  signToken,
+  verifySignedPath,
+  type AppKeys,
+  type TokenParams,
+} from './index.js';
 
 interface SignVector {
   name: string;
@@ -23,10 +35,41 @@ interface VerifyVector {
   now: number;
   expected: { status: number; reason?: string; app?: string; kid?: string; u?: string; kind?: string; contentType?: string };
 }
+interface Es256Token {
+  name: string;
+  tokenPath: string;
+  expires: number;
+  params: TokenParams;
+  path: string;
+  token: string;
+  urlPath: string;
+}
+interface Es256Block {
+  kid: string;
+  privateKey: string;
+  publicKey: string;
+  contentKid: string;
+  contentPrivateKey: string;
+  contentPublicKey: string;
+  tokens: Es256Token[];
+  verify: VerifyVector[];
+}
 interface Vectors {
   version: number;
+  es256: Es256Block;
   sign: SignVector[];
   verify: VerifyVector[];
+}
+
+function checkVerify(v: VerifyVector): void {
+  const r = verifySignedPath(v.requestUri, appLookupFrom(v.keys), v.now);
+  if (r.ok) {
+    expect({ status: 200, app: r.app, kid: r.kid, ...(r.u ? { u: r.u } : {}), kind: r.kind, contentType: r.contentType }).toEqual(
+      v.expected,
+    );
+  } else {
+    expect({ status: r.status, reason: r.reason }).toEqual(v.expected);
+  }
 }
 
 const vectors = JSON.parse(readFileSync(new URL('../test-vectors.json', import.meta.url), 'utf8')) as Vectors;
@@ -53,15 +96,47 @@ describe('test-vectors.json', () => {
   });
 
   describe.each(vectors.verify.map((v) => [v.name, v] as const))('verify: %s', (_name, v) => {
-    it(`→ ${v.expected.status}${v.expected.reason ? ` (${v.expected.reason})` : ''}`, () => {
-      const r = verifySignedPath(v.requestUri, appLookupFrom(v.keys), v.now);
-      if (r.ok) {
-        expect({ status: 200, app: r.app, kid: r.kid, ...(r.u ? { u: r.u } : {}), kind: r.kind, contentType: r.contentType }).toEqual(
-          v.expected,
-        );
-      } else {
-        expect({ status: r.status, reason: r.reason }).toEqual(v.expected);
-      }
+    it(`→ ${v.expected.status}${v.expected.reason ? ` (${v.expected.reason})` : ''}`, () => checkVerify(v));
+  });
+
+  describe('es256', () => {
+    const es = vectors.es256;
+
+    it('CSAK TESZT kulcspárok: a nyilvános kulcs a titkosból levezethető, az alakok a regexeknek felelnek meg', () => {
+      expect(publicKeyOf(es.privateKey)).toBe(es.publicKey);
+      expect(publicKeyOf(es.contentPrivateKey)).toBe(es.contentPublicKey);
+      for (const k of [es.publicKey, es.contentPublicKey]) expect(k).toMatch(PUBLIC_KEY_RE);
+      for (const k of [es.privateKey, es.contentPrivateKey]) expect(isValidPrivateKey(k)).toBe(true);
+      expect(es.publicKey).not.toBe(es.contentPublicKey);
+    });
+
+    const appKeys = (): Record<string, AppKeys> => ({
+      elearning: { keys: {}, contentKeys: {}, publicKeys: { [es.kid]: es.publicKey }, contentPublicKeys: { [es.contentKid]: es.contentPublicKey } },
+    });
+
+    describe.each(es.tokens.map((t) => [t.name, t] as const))('tokens: %s', (_name, t) => {
+      it('a rögzített token az URL-ben, és a lejáratig érvényes', () => {
+        expect(parseSignedPath(t.urlPath)).toMatchObject({ token: t.token, expires: t.expires, path: t.path });
+        expect(verifySignedPath(t.urlPath, appLookupFrom(appKeys()), t.expires)).toMatchObject({ ok: true, kid: t.params.kid });
+      });
+      it('oda-vissza: az sdk aláír (másik tokent ad), a TS elfogadja; az URL a token nélkül azonos', () => {
+        const privateKey = t.params.kid === es.kid ? es.privateKey : es.contentPrivateKey;
+        const input = { tokenPath: t.tokenPath, expires: t.expires, params: t.params };
+        const token = signToken({ privateKey, ...input });
+        expect(token).not.toBe(t.token);
+        const url = buildSignedPath({ privateKey, kid: t.params.kid, u: t.params.u, tokenPath: t.tokenPath, expires: t.expires, path: t.path });
+        expect(url.replace(/^\/bcdn_token=[^&]+/, '')).toBe(t.urlPath.replace(/^\/bcdn_token=[^&]+/, ''));
+        expect(verifySignedPath(url, appLookupFrom(appKeys()), t.expires).ok).toBe(true);
+      });
+    });
+
+    describe.each(es.verify.map((v) => [v.name, v] as const))('verify: %s', (_name, v) => {
+      it(`→ ${v.expected.status}${v.expected.reason ? ` (${v.expected.reason})` : ''}`, () => checkVerify(v));
+    });
+
+    it('a verify-vektorok minden ES256-hoz kötődő okot fednek', () => {
+      const reasons = new Set(es.verify.map((v) => v.expected.reason ?? 'ok'));
+      for (const r of ['ok', 'expired', 'bad-signature', 'malformed-token', 'wrong-scheme', 'wrong-key-kind']) expect(reasons).toContain(r);
     });
   });
 });
