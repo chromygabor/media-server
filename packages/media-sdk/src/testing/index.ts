@@ -12,4 +12,4 @@ export type {
   FakeMediaServerOptions,
 } from './fake-server.js';
 export { testAppsFile, testKeys } from './test-keys.js';
-export type { TestAppsOptions, TestKeys } from './test-keys.js';
+export type { TestAppsOptions, TestEs256Keys, TestKeys } from './test-keys.js';

@@ -1,16 +1,18 @@
 // A media-keys és a media-sign CLI (csomagterv WP33; korábban server/test/cli.spec.ts). Az aláírt linket a
 // csomag `verifySignedPath`-ja ellenőrzi (a szerver njs-ével a közös vektorok tartják összhangban).
 
-import { chmodSync, mkdtempSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { addKey, defaultKid, generateKey, validateAppsFile, type AppsFile } from '../apps-config.js';
+import { addKey, checkPublicKeys, defaultKid, generateKey, generateKeyPair, publicKeyOf, validateAppsFile, type AppsFile } from '../apps-config.js';
 import { bucketExpires } from '../expires.js';
+import { isValidPrivateKey, isValidPublicKey } from '../keys.js';
+import { testAppsFile, testKeys } from '../testing/test-keys.js';
 import { appLookupFrom, verifySignedPath } from '../token.js';
 import { readAppsFile, writeAppsFile } from './apps-file.js';
 import { keysMain } from './keys.js';
-import { CONTENT_TTL, signMain, signUrl } from './sign.js';
+import { CONTENT_TTL, signMain, signUrl, signingFromEnv } from './sign.js';
 
 /** A médiaszerver `test/fixtures/apps.test.json`-jával azonos, CSAK TESZT kulcsok. */
 const fixture: AppsFile = {
@@ -239,5 +241,201 @@ describe('media-sign', () => {
     expect(r.out).toMatch(/^http:\/\/127\.0\.0\.1:10090\/bcdn_token=HS256-[A-Za-z0-9_-]{43}&kid=t2026a&token_path=%2Felearning%2Ft%2F&u=u1&expires=\d+\/elearning\/t\/a\.mp4$/);
     expect(verify(path(r.out), Math.floor(Date.now() / 1000)).ok).toBe(true);
     expect(capture(() => signMain(['--apps', file, 'elearning', 't/a.mp4', '--ttl', 'x'])).err).toMatch(/érvénytelen --ttl/);
+  });
+});
+
+describe('media-keys --keypair (ES256, app oldal)', () => {
+  /** A kimenet sorai `NÉV=érték` / `kulcs=érték` párokká (az env-sorok és az üzemeltetői sor). */
+  const fields = (out: string) => Object.fromEntries([...out.matchAll(/([A-Za-z_]+)=(\S+)/g)].map((m) => [m[1], m[2]]));
+
+  it('parse-olható kimenet: env-sorok (titok) és az üzemeltetői sor; a nyilvános kulcs a titkosból levezethető; fájlt nem ír', () => {
+    const cwd = process.cwd();
+    const empty = mkdtempSync(join(tmpdir(), 'media-sdk-keypair-'));
+    let r: ReturnType<typeof capture>;
+    try {
+      process.chdir(empty);
+      r = capture(() => keysMain(['--keypair', 'elearning-dev']));
+      expect(readdirSync(empty)).toEqual([]);
+    } finally {
+      process.chdir(cwd);
+      rmSync(empty, { recursive: true, force: true });
+    }
+    expect(r.err).toBe('');
+    expect(r.code).toBeUndefined();
+    const f = fields(r.out);
+    const kid = defaultKid(false, new Date(), true);
+    expect(kid).toMatch(/^\d{4}e$/);
+    expect(f.MEDIA_SERVER_KEY_ID).toBe(kid);
+    const privateKeys = JSON.parse(f.MEDIA_SERVER_PRIVATE_KEYS!) as Record<string, string>;
+    expect(Object.keys(privateKeys)).toEqual([kid]);
+    const privateKey = privateKeys[kid]!;
+    expect(isValidPrivateKey(privateKey)).toBe(true);
+    expect(f).toMatchObject({ app: 'elearning-dev', kid, fajta: 'böngészős' });
+    expect(isValidPublicKey(f.publicKey)).toBe(true);
+    expect(publicKeyOf(privateKey)).toBe(f.publicKey);
+    // Az üzemeltetői blokk a titkos kulcsot nem tartalmazza.
+    const operator = r.out.slice(r.out.indexOf('Az üzemeltetőnek küldendő'));
+    expect(operator).not.toContain(privateKey);
+    expect(operator).toContain(`media-keys --register elearning-dev --kid ${kid} --public-key ${f.publicKey} --write <apps.json>`);
+    expect(operator).toContain(`${f.publicKey!.slice(0, 8)} … ${f.publicKey!.slice(-8)}`);
+  });
+
+  it('--content: tartalom-env-nevek, alap kid <év>f; --kid; kizárások', () => {
+    const r = capture(() => keysMain(['--keypair', 'elearning', '--content']));
+    const f = fields(r.out);
+    expect(f.MEDIA_SERVER_CONTENT_KEY_ID).toBe(defaultKid(true, new Date(), true));
+    expect(publicKeyOf(f.MEDIA_SERVER_CONTENT_PRIVATE_KEY!)).toBe(f.publicKey);
+    expect(f.fajta).toBe('tartalom');
+    expect(r.out).toContain(' --content --write <apps.json>');
+    expect(fields(capture(() => keysMain(['--keypair', 'elearning', '--kid', 'k1'])).out).MEDIA_SERVER_KEY_ID).toBe('k1');
+    expect(capture(() => keysMain(['--keypair', 'elearning', '--write', tmpFile('a.json')])).err).toMatch(/fájlt nem ír/);
+    expect(capture(() => keysMain(['--keypair', '--register', 'elearning'])).err).toMatch(/kizárja/);
+    expect(capture(() => keysMain(['--keypair', 'rossz/app'])).err).toMatch(/érvénytelen app-név/);
+    expect(capture(() => keysMain(['elearning', '--public-key', 'x'])).err).toMatch(/csak a --register-rel/);
+  });
+});
+
+describe('media-keys --register (ES256, üzemeltető)', () => {
+  it('hozzáad (publicKeys / contentPublicKeys), az eredmény érvényes; kid-ütközésre hiba, a fájl nem változik', () => {
+    const file = tmpFile('apps.json');
+    writeAppsFile(file, fixture);
+    const browser = generateKeyPair();
+    const content = generateKeyPair();
+    const r = capture(() => keysMain(['--register', 'elearning', '--kid', '2026e', '--public-key', browser.publicKey, '--write', file]));
+    expect(r.err).toBe('');
+    expect(r.out).toBe(`Hozzáadva: ${file} → elearning.publicKeys.2026e (${browser.publicKey.slice(0, 8)} … ${browser.publicKey.slice(-8)})`);
+    capture(() => keysMain(['--register', 'elearning', '--kid', '2026f', '--public-key', content.publicKey, '--content', '--write', file]));
+    const apps = readAppsFile(file);
+    expect(apps.elearning).toMatchObject({ publicKeys: { '2026e': browser.publicKey }, contentPublicKeys: { '2026f': content.publicKey } });
+    expect(apps.elearning?.keys).toEqual(fixture.elearning?.keys);
+    expect(validateAppsFile(apps).ok).toBe(true);
+    expect(checkPublicKeys(apps)).toEqual([]);
+
+    const before = readFileSync(file, 'utf8');
+    for (const kid of ['2026e', '2026f', 't2026a', 't2026c']) {
+      const again = capture(() => keysMain(['--register', 'elearning', '--kid', kid, '--public-key', generateKeyPair().publicKey, '--write', file]));
+      expect(again.err).toMatch(/már létezik \(felülírás nincs/);
+    }
+    expect(capture(() => keysMain(['--register', 'elearning', '--kid', 'uj', '--public-key', browser.publicKey, '--write', file])).err).toMatch(
+      /nyilvános kulcs már szerepel/,
+    );
+    expect(readFileSync(file, 'utf8')).toBe(before);
+  });
+
+  it('hibás kulcs → hiba a kulcs idézése nélkül; a --kid, a --public-key és a --write kötelező', () => {
+    const file = tmpFile('apps.json');
+    const bad = `${generateKeyPair().publicKey.slice(0, -1)}B`;
+    const r = capture(() => keysMain(['--register', 'x', '--kid', 'k', '--public-key', bad, '--write', file]));
+    expect(r.err).toMatch(/érvénytelen nyilvános kulcs/);
+    expect(r.err).not.toContain(bad);
+    const notOnCurve = `BA${'A'.repeat(84)}A`;
+    expect(capture(() => keysMain(['--register', 'x', '--kid', 'k', '--public-key', notOnCurve, '--write', file])).err).toMatch(
+      /érvénytelen nyilvános kulcs/,
+    );
+    const pk = generateKeyPair().publicKey;
+    for (const args of [['--kid', 'k', '--public-key', pk], ['--public-key', pk, '--write', file], ['--kid', 'k', '--write', file]]) {
+      expect(capture(() => keysMain(['--register', 'x', ...args])).err).toMatch(/kötelező/);
+    }
+    // Új fájl, új app: 0600, dir = --dir.
+    capture(() => keysMain(['--register', 'x', '--kid', 'k', '--public-key', pk, '--dir', 'xd', '--write', file]));
+    expect(statSync(file).mode & 0o777).toBe(0o600);
+    expect(readAppsFile(file).x).toMatchObject({ dir: 'xd', publicKeys: { k: pk } });
+  });
+});
+
+describe('media-sign --env / --env-file (D117)', () => {
+  const path = (url: string) => url.replace(/^https?:\/\/[^/]+/, '');
+  const testLookup = appLookupFrom(testAppsFile());
+  const es = testKeys.es256;
+  const esEnv = {
+    MEDIA_SERVER_APP: testKeys.app,
+    MEDIA_SERVER_URL: 'https://media.example.test',
+    MEDIA_SERVER_KEY_ID: es.kid,
+    MEDIA_SERVER_PRIVATE_KEYS: JSON.stringify({ [es.kid]: es.privateKey }),
+    MEDIA_SERVER_CONTENT_KEY_ID: es.contentKid,
+    MEDIA_SERVER_CONTENT_PRIVATE_KEY: es.contentPrivateKey,
+  };
+  const hsEnv = {
+    MEDIA_SERVER_APP: testKeys.app,
+    MEDIA_SERVER_KEY_ID: testKeys.kid,
+    MEDIA_SERVER_KEYS: JSON.stringify({ [testKeys.kid]: testKeys.key }),
+    MEDIA_SERVER_CONTENT_KEY_ID: testKeys.contentKid,
+    MEDIA_SERVER_CONTENT_KEY: testKeys.contentKey,
+  };
+
+  it('ES256: a link a verifySignedPath + testAppsFile ellen elfogadott (böngészős és tartalom); az alap-URL a MEDIA_SERVER_URL', () => {
+    const r = capture(() => signMain(['--env', 'l/a.mp4', '--u', 'u1'], esEnv));
+    expect(r.err).toBe('');
+    expect(r.out).toMatch(/^https:\/\/media\.example\.test\/bcdn_token=ES256-[A-Za-z0-9_-]{86}&kid=2026e&token_path=%2Ftest-app%2Fl%2F&u=u1&expires=\d+\/test-app\/l\/a\.mp4$/);
+    expect(verifySignedPath(path(r.out), testLookup, Math.floor(Date.now() / 1000))).toMatchObject({ ok: true, kid: es.kid, u: 'u1' });
+    const c = capture(() => signMain(['--env', '_content/v1.json.gz', '--content', '--base', 'http://x.test'], esEnv));
+    expect(c.out.startsWith('http://x.test/bcdn_token=ES256-')).toBe(true);
+    expect(verifySignedPath(path(c.out), testLookup, Math.floor(Date.now() / 1000))).toMatchObject({ ok: true, kind: 'content' });
+    expect(r.out).not.toContain(es.privateKey);
+  });
+
+  it('HMAC: ugyanabból a bemenetből ugyanaz az URL, mint az --apps-módban', () => {
+    const NOW_E = 1_795_431_700;
+    const fromEnv = signingFromEnv(hsEnv, false);
+    const { app, base: _base, ...signing } = fromEnv;
+    expect(signUrl({ ...signing, app, assetKey: 'l/a.mp4', u: 'u1', now: NOW_E })).toBe(
+      signUrl({ apps: testAppsFile(), app: testKeys.app, assetKey: 'l/a.mp4', u: 'u1', now: NOW_E }),
+    );
+    const c = signingFromEnv(hsEnv, true);
+    expect(signUrl({ ...c, base: undefined, assetKey: '_content/v.json.gz', content: true, now: NOW_E })).toBe(
+      signUrl({ apps: testAppsFile(), app: testKeys.app, assetKey: '_content/v.json.gz', content: true, now: NOW_E }),
+    );
+    const file = tmpFile('apps.json');
+    writeAppsFile(file, testAppsFile());
+    const viaApps = capture(() => signMain(['--apps', file, testKeys.app, 'l/a.mp4', '--ttl', '600']));
+    const viaEnv = capture(() => signMain(['--env', 'l/a.mp4', '--ttl', '600'], hsEnv));
+    // Az óra a két hívás között léphet: az expires-t kivéve azonos.
+    expect(viaEnv.out.replace(/HS256-[^&]+|expires=\d+/g, '')).toBe(viaApps.out.replace(/HS256-[^&]+|expires=\d+/g, ''));
+    expect(verifySignedPath(path(viaEnv.out), testLookup, Math.floor(Date.now() / 1000)).ok).toBe(true);
+  });
+
+  it('--env-file: dotenv-fájlból, a folyamat környezete nélkül', () => {
+    const file = tmpFile('.env');
+    writeFileSync(file, Object.entries(esEnv).map(([k, v]) => `${k}='${v}'`).join('\n'));
+    const r = capture(() => signMain(['--env-file', file, 'l/a.mp4'], {}));
+    expect(r.err).toBe('');
+    expect(verifySignedPath(path(r.out), testLookup, Math.floor(Date.now() / 1000))).toMatchObject({ ok: true, kid: es.kid });
+  });
+
+  it('hibák a kulcs idézése nélkül: hiányzó változó, hibás titkos kulcs, hibás JSON, kid mindkét térképben; kizárások', () => {
+    const err = (env: Record<string, string>, args: string[] = ['--env', 'l/a.mp4']) => capture(() => signMain(args, env)).err;
+    const { MEDIA_SERVER_APP: _a, ...noApp } = esEnv;
+    expect(err(noApp)).toMatch(/hiányzik a MEDIA_SERVER_APP/);
+    const { MEDIA_SERVER_KEY_ID: _k, ...noKid } = esEnv;
+    expect(err(noKid)).toMatch(/hiányzik a MEDIA_SERVER_KEY_ID/);
+    const { MEDIA_SERVER_PRIVATE_KEYS: _p, ...noKeys } = esEnv;
+    expect(err(noKeys)).toMatch(/hiányzik a MEDIA_SERVER_KEYS vagy a MEDIA_SERVER_PRIVATE_KEYS/);
+    expect(err({ ...esEnv, MEDIA_SERVER_KEY_ID: 'nincs' })).toMatch(/nincs sem a MEDIA_SERVER_KEYS-ben/);
+    const badKey = `${es.privateKey.slice(0, 40)}xx${es.privateKey.slice(42)}`;
+    const bad = err({ ...esEnv, MEDIA_SERVER_PRIVATE_KEYS: JSON.stringify({ [es.kid]: badKey }) });
+    expect(bad).toMatch(/érvénytelen titkos kulcs/);
+    expect(bad).not.toContain(badKey.slice(0, 20));
+    const badJson = err({ ...esEnv, MEDIA_SERVER_PRIVATE_KEYS: `{"${es.kid}": "${es.privateKey}"` });
+    expect(badJson).toMatch(/nem érvényes JSON/);
+    expect(badJson).not.toContain(es.privateKey.slice(0, 20));
+    expect(err({ ...esEnv, MEDIA_SERVER_KEYS: JSON.stringify({ [es.kid]: testKeys.key }) })).toMatch(/is szerepel/);
+    const both = err({ ...esEnv, MEDIA_SERVER_CONTENT_KEY: testKeys.contentKey }, ['--env', '_content/v.json.gz', '--content']);
+    expect(both).toMatch(/csak az egyik/);
+    expect(both).not.toContain(testKeys.contentKey);
+    expect(err(esEnv, ['--env', '_content/v.json.gz', '--content', '--kid', 'mas'])).toMatch(/csak a MEDIA_SERVER_CONTENT_KEY_ID/);
+    expect(err(esEnv, ['--env', '--apps', 'x.json', 'l/a.mp4'])).toMatch(/kizárja egymást/);
+    expect(err(esEnv, ['--env', '--env-file', 'x', 'l/a.mp4'])).toMatch(/kizárja egymást/);
+    const usage = capture(() => signMain(['--env', testKeys.app, 'l/a.mp4'], esEnv));
+    expect([usage.code, usage.err.startsWith('Használat: media-sign')]).toEqual([2, true]);
+  });
+
+  it('--apps módban egy ES256 kid-re érthető hiba (az app írja alá, --env)', () => {
+    const apps = testAppsFile();
+    expect(() => signUrl({ apps, app: testKeys.app, assetKey: 'l/a.mp4', kid: es.kid })).toThrow(/aszimmetrikus kid \(2026e, publicKeys\): az app írja alá, --env/);
+    expect(() => signUrl({ apps, app: testKeys.app, assetKey: '_content/v.json.gz', content: true, kid: es.contentKid })).toThrow(
+      /aszimmetrikus kid \(2026f, contentPublicKeys\)/,
+    );
+    const onlyEs: AppsFile = { e: { dir: '.', keys: {}, contentKeys: {}, publicKeys: { [es.kid]: es.publicKey } } };
+    expect(() => signUrl({ apps: onlyEs, app: 'e', assetKey: 'l/a.mp4' })).toThrow(/aszimmetrikus kid/);
   });
 });

@@ -5,7 +5,10 @@
 // `206` / `416`, `HEAD`, `ETag` / `Last-Modified` / `304`, `If-Range`, CORS az `origins`-ből, CORP, `Cache-Control`,
 // `/healthz`, `OPTIONS`, `405`, hibás `apps.json` mellett minden kérésre `403` (`apps-invalid`).
 //
-// Nincs benne: a korlátok (`429`, `503`, `limit_rate`) és a napló; ezek a valódi szerver docker-tesztjében vannak.
+// Mindkét séma (HS256, ES256; a `kid` választ, `wrong-scheme`), a `verifySignedPath`-on át.
+// Nincs benne: a korlátok (`429`, `503`, `limit_rate`), az ismételt hibás ES256-aláírás elhagyható `429`-e (a
+// szerver hibaszámlálója, naplóban `blocked`; itt a hibák nem számolnak) és a napló; ezek a valódi szerver
+// docker-tesztjében vannak.
 // A tesztből vezérelhető: `override` (más státusz, késleltetés, más törzs, fejléc, rövidített Range-válasz; függvényként
 // kérésenként és aszinkron is, pl. egy kérés visszatartására), `now` (az óra), `routes` (saját végpontok, pl. egy
 // másik folyamatból hívható vezérlő), és a `requests` napló.

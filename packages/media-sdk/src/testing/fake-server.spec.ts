@@ -10,7 +10,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import fc from 'fast-check';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
-import { generateKey, isValidAppName, type AppsFile } from '../apps-config.js';
+import { checkPublicKeys, generateKey, isValidAppName, publicKeyOf, validateAppsFile, type AppsFile } from '../apps-config.js';
 import { isValidKeyId } from '../keys.js';
 import { createUrlSigner } from '../signer.js';
 import { buildSignedPath, type AppKeys } from '../token.js';
@@ -24,7 +24,10 @@ interface VerifyVector {
   now: number;
   expected: { status: number; reason?: string; app?: string };
 }
-const vectors = JSON.parse(readFileSync(new URL('../../test-vectors.json', import.meta.url), 'utf8')) as { verify: VerifyVector[] };
+const vectors = JSON.parse(readFileSync(new URL('../../test-vectors.json', import.meta.url), 'utf8')) as {
+  verify: VerifyVector[];
+  es256: { verify: VerifyVector[] };
+};
 
 interface Res {
   status: number;
@@ -60,8 +63,8 @@ function rootWith(files: Record<string, string | Buffer> = {}): string {
 }
 afterAll(() => rmSync(tmp, { recursive: true, force: true }));
 
-describe('konformancia: a test-vectors.json verify vektorai HTTP-n', () => {
-  it.each(vectors.verify.map((v) => [v.name, v] as const))('%s', async (_name, v) => {
+describe('konformancia: a test-vectors.json verify vektorai HTTP-n (a felső szintűek és az es256.verify)', () => {
+  it.each([...vectors.verify, ...vectors.es256.verify].map((v) => [v.name, v] as const))('%s', async (_name, v) => {
     // A vektor kulcsai `dir`-rel (az app saját könyvtára); a fájl ott van, ahová a valódi szerver nézne.
     const apps: AppsFile = Object.fromEntries(Object.entries(v.keys).map(([app, k]) => [app, { dir: `d-${app}`, ...k }]));
     const plain = v.requestUri.split('?')[0]!.replace(/^\/bcdn_token=[^/]*/, '');
@@ -294,6 +297,83 @@ describe('válaszok (SPEC 4–5.)', () => {
   });
 });
 
+describe('ES256 (aszimmetrikus séma) a hamis szerveren', () => {
+  const VIDEO = Buffer.from('0123456789abcdefghij');
+  const APP = testKeys.app;
+  const es = testKeys.es256;
+  let fake: FakeMediaServer;
+  let nowS = NOW_S;
+  beforeAll(async () => {
+    fake = await startFakeMediaServer({ apps: testKeys.apps, root: rootWith({ 'l/v.mp4': VIDEO, '_content/1.json.gz': 'gz' }), now: () => nowS * 1000 });
+  });
+  afterAll(() => fake.close());
+  beforeEach(() => {
+    nowS = NOW_S;
+    fake.requests.length = 0;
+  });
+  const esSign = (path: string, opts: { content?: boolean; privateKey?: string; kid?: string } = {}) =>
+    buildSignedPath({
+      privateKey: opts.privateKey ?? (opts.content ? es.contentPrivateKey : es.privateKey),
+      kid: opts.kid ?? (opts.content ? es.contentKid : es.kid),
+      tokenPath: opts.content ? path : `${path.slice(0, path.lastIndexOf('/') + 1)}`,
+      expires: NOW_S + 60,
+      ...(opts.content ? {} : { u: 'u1' }),
+      path,
+    });
+  /** A token `s` felének cseréje `n − s`-re (magas-S változat, ugyanaz az aláírás másik írásmódja). */
+  const highS = (uri: string) =>
+    uri.replace(/ES256-([A-Za-z0-9_-]{86})/, (_m, b64: string) => {
+      const sig = Buffer.from(b64, 'base64url');
+      const n = BigInt('0xffffffff00000000ffffffffffffffffbce6faada7179e84f3b9cac2fc632551');
+      const s = BigInt(`0x${sig.subarray(32).toString('hex')}`);
+      Buffer.from((n - s).toString(16).padStart(64, '0'), 'hex').copy(sig, 32);
+      return `ES256-${sig.toString('base64url')}`;
+    });
+
+  it('200 / 206 / 416 / HEAD, tartalomfájl 200; a createUrlSigner ES256-linkje is', async () => {
+    const video = esSign(`/${APP}/l/v.mp4`);
+    expect(video).toMatch(/^\/bcdn_token=ES256-/);
+    const full = await get(fake.url, video);
+    expect(full.status).toBe(200);
+    expect(full.body).toEqual(VIDEO);
+    const part = await get(fake.url, video, { headers: { range: 'bytes=2-5' } });
+    expect([part.status, part.body.toString(), part.headers['content-range']]).toEqual([206, '2345', 'bytes 2-5/20']);
+    expect((await get(fake.url, video, { headers: { range: 'bytes=20-' } })).status).toBe(416);
+    expect((await get(fake.url, video, { method: 'HEAD' })).status).toBe(200);
+    expect((await get(fake.url, esSign(`/${APP}/_content/1.json.gz`, { content: true }))).status).toBe(200);
+    const signer = createUrlSigner({ app: APP, ...es, baseUrl: fake.url, maxTtlSeconds: 60, now: () => nowS * 1000 });
+    const [r] = signer.signDirectory({ scopeDir: 'l/', userId: 'u1', assets: [{ assetKey: 'l/v.mp4' }] }).results;
+    const c = signer.signContentFile('1');
+    if (!r || !('url' in r) || !('url' in c)) throw new Error('várt URL');
+    expect((await get(fake.url, r.url.slice(fake.url.length))).status).toBe(200);
+    expect((await get(fake.url, c.url.slice(fake.url.length))).status).toBe(200);
+    nowS = NOW_S + 61;
+    expect((await get(fake.url, video)).status).toBe(410);
+  });
+
+  it('wrong-scheme: HS256-token publicKeys-kid-del és ES256-token HMAC-kid-del; magas-S → 403 bad-signature', async () => {
+    const hsWithEsKid = buildSignedPath({ key: testKeys.key, kid: es.kid, tokenPath: `/${APP}/l/`, expires: NOW_S + 60, u: 'u1', path: `/${APP}/l/v.mp4` });
+    const esWithHsKid = esSign(`/${APP}/l/v.mp4`, { kid: testKeys.kid });
+    const video = esSign(`/${APP}/l/v.mp4`);
+    for (const uri of [hsWithEsKid, esWithHsKid, highS(video)]) expect((await get(fake.url, uri)).status).toBe(403);
+    expect(fake.requests.map((r) => r.verify)).toEqual([
+      { ok: false, status: 403, reason: 'wrong-scheme' },
+      { ok: false, status: 403, reason: 'wrong-scheme' },
+      { ok: false, status: 403, reason: 'bad-signature' },
+    ]);
+    // A másik kulcspárral (a tartalomkulccsal) aláírt böngészős token: bad-signature.
+    expect((await get(fake.url, esSign(`/${APP}/l/v.mp4`, { privateKey: es.contentPrivateKey }))).status).toBe(403);
+    expect(fake.requests.at(-1)?.verify).toEqual({ ok: false, status: 403, reason: 'bad-signature' });
+  });
+
+  it('a hibás aláírásokat nem számolja (a szerver elhagyható 429-ét / blocked-ját nem utánozza, SPEC 4.)', async () => {
+    const bad = highS(esSign(`/${APP}/l/v.mp4`));
+    const statuses = await Promise.all(Array.from({ length: 60 }, () => get(fake.url, bad).then((r) => r.status)));
+    expect(new Set(statuses)).toEqual(new Set([403]));
+    expect((await get(fake.url, esSign(`/${APP}/l/v.mp4`))).status).toBe(200);
+  });
+});
+
 describe('dir és apps.json', () => {
   it('dir: alkönyvtár és közös dir két appnak; a CORP alapból same-site', async () => {
     const root = rootWith({ 'shared/x/a.jpg': 'shared', 'only/x/a.jpg': 'only' });
@@ -417,12 +497,26 @@ describe('tesztvezérlés', () => {
 describe('testKeys', () => {
   it('a vektorok kulcsai, érvényes apps.json, a createUrlSigner-nek közvetlenül adható', async () => {
     expect(testKeys).toMatchObject({ app: 'test-app', kid: '2026a', contentKid: '2026c' });
+    const es = testKeys.es256;
+    expect(es).toMatchObject({ kid: '2026e', contentKid: '2026f' });
+    const publicMaps = { publicKeys: { '2026e': es.publicKey }, contentPublicKeys: { '2026f': es.contentPublicKey } };
     expect(testKeys.apps).toEqual({
-      'test-app': { dir: '.', keys: { '2026a': testKeys.key }, contentKeys: { '2026c': testKeys.contentKey } },
+      'test-app': { dir: '.', keys: { '2026a': testKeys.key }, contentKeys: { '2026c': testKeys.contentKey }, ...publicMaps },
     });
     expect(testAppsFile({ app: 'mas', dir: 'm', origins: ['https://a.test'], corp: 'same-origin' })).toEqual({
-      mas: { dir: 'm', keys: { '2026a': testKeys.key }, contentKeys: { '2026c': testKeys.contentKey }, origins: ['https://a.test'], corp: 'same-origin' },
+      mas: {
+        dir: 'm',
+        keys: { '2026a': testKeys.key },
+        contentKeys: { '2026c': testKeys.contentKey },
+        ...publicMaps,
+        origins: ['https://a.test'],
+        corp: 'same-origin',
+      },
     });
+    expect(validateAppsFile(testKeys.apps).ok).toBe(true);
+    expect(checkPublicKeys(testKeys.apps)).toEqual([]);
+    expect(publicKeyOf(es.privateKey)).toBe(es.publicKey);
+    expect(publicKeyOf(es.contentPrivateKey)).toBe(es.contentPublicKey);
     expect(Object.isFrozen(testKeys)).toBe(true);
   });
   it('mélyen fagyasztott: az apps és a kulcstérképek módosítása TypeError (a modul szigorú módú)', () => {

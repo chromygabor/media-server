@@ -1,8 +1,17 @@
 // Az URL-aláíró (csomagterv WP34): könyvtár-token, lejárat, `?v=`, a szűrés ok-kódjai, tartalom-token; minden kiadott
 // URL átmegy a `verifySignedPath`-on. Rögzített óra, CSAK TESZT kulcsok.
 
+import { createPrivateKey } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
-import { CONTENT_TOKEN_TTL_SECONDS, MEDIA_URL_VERSION_LENGTH, type SignResult, type UrlSignerConfig, createUrlSigner } from './signer.js';
+import vectors from '../test-vectors.json' with { type: 'json' };
+import {
+  CONTENT_TOKEN_TTL_SECONDS,
+  MEDIA_URL_VERSION_LENGTH,
+  SIGNATURE_MEMO_MAX_ENTRIES,
+  type SignResult,
+  type UrlSignerConfig,
+  createUrlSigner,
+} from './signer.js';
 import { appLookupFrom, parseSignedPath, verifySignedPath } from './token.js';
 
 const NOW = 1_795_435_200; // unix-másodperc
@@ -178,5 +187,94 @@ describe('createUrlSigner – signContentFile', () => {
   it('tartalomkulcs nélkül TypeError', () => {
     expect(() => signer({ contentKid: undefined }).signContentFile('v1')).toThrow(TypeError);
     expect(() => signer({ contentKey: undefined }).signContentFile('v1')).toThrow(TypeError);
+  });
+});
+
+describe('createUrlSigner – ES256 (privateKey, aláírás-memó, D113)', () => {
+  // CSAK TESZT kulcspárok a közös vektorokból.
+  const es = vectors.es256;
+  const esLookup = appLookupFrom({
+    [APP]: { keys: {}, contentKeys: {}, publicKeys: { [es.kid]: es.publicKey }, contentPublicKeys: { [es.contentKid]: es.contentPublicKey } },
+  });
+  let clock = NOW;
+  const esSigner = (over: Partial<UrlSignerConfig> = {}) =>
+    createUrlSigner({
+      baseUrl: BASE,
+      app: APP,
+      kid: es.kid,
+      privateKey: es.privateKey,
+      maxTtlSeconds: MAX_TTL,
+      contentKid: es.contentKid,
+      contentPrivateKey: es.contentPrivateKey,
+      now: () => clock * 1000,
+      ...over,
+    });
+  const tokenOf = (r: SignResult | { url: string } | { error: string }) => (parseSignedPath(uri(r)) as { token: string }).token;
+  const one = (s: ReturnType<typeof createUrlSigner>, userId = USER, tokenExp: number | null = NOW + 600, file = 'a.mp4') =>
+    s.signDirectory({ scopeDir: DIR, userId, tokenExp, assets: [{ assetKey: `${DIR}${file}` }] }).results[0]!;
+
+  it('ES256-token, a szerver (verifySignedPath) elfogadja; böngészős és tartalom; a KeyObject is jó', () => {
+    clock = NOW;
+    const r = one(esSigner());
+    expect(tokenOf(r)).toMatch(/^ES256-[A-Za-z0-9_-]{86}$/);
+    expect(verifySignedPath(uri(r), esLookup, NOW)).toMatchObject({ ok: true, kid: es.kid, u: USER, kind: 'browser' });
+    const c = esSigner().signContentFile('2026.11.23-1');
+    expect(verifySignedPath(uri(c), esLookup, NOW)).toMatchObject({ ok: true, kid: es.contentKid, kind: 'content' });
+    const keyObject = createPrivateKey({ key: Buffer.from(es.privateKey, 'base64url'), format: 'der', type: 'pkcs8' });
+    expect(verifySignedPath(uri(one(esSigner({ privateKey: keyObject }))), esLookup, NOW)).toMatchObject({ ok: true });
+  });
+
+  it('két signDirectory ugyanarra → bájtra azonos URL (memó); más u, más fájl-könyvtár vagy lejárat → más token', () => {
+    clock = NOW;
+    const s = esSigner();
+    const a = s.signDirectory({ scopeDir: DIR, userId: USER, tokenExp: NOW + 600, assets: [{ assetKey: `${DIR}a.mp4` }, { assetKey: `${DIR}b.jpg` }] });
+    clock = NOW + 300;
+    const b = s.signDirectory({ scopeDir: DIR, userId: USER, tokenExp: NOW + 600, assets: [{ assetKey: `${DIR}a.mp4` }, { assetKey: `${DIR}b.jpg` }] });
+    expect(b).toEqual(a);
+    expect(tokenOf(a.results[0]!)).toBe(tokenOf(a.results[1]!)); // egy könyvtár-token a hatókörre
+    expect(tokenOf(one(s, 'masik-user'))).not.toBe(tokenOf(a.results[0]!));
+    expect(tokenOf(one(s, USER, NOW + 601))).not.toBe(tokenOf(a.results[0]!));
+    // Memó nélkül (új aláíró) az ECDSA véletlenszerű: más token, de mindkettő érvényes.
+    const fresh = one(esSigner());
+    expect(tokenOf(fresh)).not.toBe(tokenOf(a.results[0]!));
+    expect(verifySignedPath(uri(fresh), esLookup, NOW + 300)).toMatchObject({ ok: true });
+  });
+
+  it('lejárt bejegyzés kiesik: a lejárat után ugyanarra az aláírt szövegre új aláírás', () => {
+    clock = NOW;
+    const s = esSigner();
+    const first = tokenOf(one(s, USER, NOW + 10));
+    clock = NOW + 10;
+    expect(tokenOf(one(s, USER, NOW + 10))).toBe(first); // a lejárat pillanatában még érvényes
+    clock = NOW + 11;
+    expect(tokenOf(one(s, USER, NOW + 10))).not.toBe(first);
+  });
+
+  it(`a memó mérete korlátos (${SIGNATURE_MEMO_MAX_ENTRIES}): a legrégebbi kiszorul, a frissebbek maradnak`, () => {
+    clock = NOW;
+    const s = esSigner();
+    const firstToken = tokenOf(one(s, 'u-0'));
+    const secondToken = tokenOf(one(s, 'u-1'));
+    for (let i = 2; i <= SIGNATURE_MEMO_MAX_ENTRIES; i++) one(s, `u-${i}`);
+    // SIGNATURE_MEMO_MAX_ENTRIES + 1 különböző aláírt szöveg: az első kiszorult, a második még bent van.
+    expect(tokenOf(one(s, 'u-1'))).toBe(secondToken);
+    expect(tokenOf(one(s, 'u-0'))).not.toBe(firstToken);
+  });
+
+  it('a HMAC-ág változatlan (memó nélkül is determinisztikus); a key és a privateKey együtt TypeError', () => {
+    expect(() => esSigner({ key: KEY })).toThrow(TypeError);
+    expect(() => esSigner({ contentKey: CKEY })).toThrow(TypeError);
+    expect(() => signer({ privateKey: es.privateKey })).toThrow(/csak az egyik/);
+    expect(one(signer())).toEqual(one(signer()));
+  });
+
+  it('hibás titkos kulcs → rejected (nem dob, a kulcsot sehol nem idézi)', () => {
+    clock = NOW;
+    for (const bad of ['nem-kulcs', es.publicKey, `${es.privateKey.slice(0, -4)}AAAA`]) {
+      expect(esSigner({ privateKey: bad }).signDirectory({ scopeDir: DIR, userId: USER, assets: [{ assetKey: `${DIR}a.mp4` }] }).results).toEqual([
+        { error: 'rejected' },
+      ]);
+      expect(esSigner({ contentPrivateKey: bad }).signContentFile('v1')).toEqual({ error: 'rejected' });
+    }
   });
 });

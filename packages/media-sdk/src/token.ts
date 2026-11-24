@@ -228,6 +228,17 @@ export function signToken(input: SignTokenInput): string {
  * kulcsnál `/`-re végződő könyvtár-`token_path`, tartalomnál pontosan a fájl és `u` nélkül.
  */
 export function buildSignedPath(input: BuildSignedPathInput): string {
+  return buildSignedPathWith(input);
+}
+
+/**
+ * Az aláírt szöveghez (`M`) tartozó token előállítása egy memón át: `sign()` aláír, a memó eldönti, hogy egy korábbi
+ * tokent ad-e vissza helyette. Belső (a `createUrlSigner` aláírás-memója, D113); a csomag felületén nincs.
+ */
+export type TokenMemo = (message: string, sign: () => string) => string;
+
+/** A `buildSignedPath` a memóval (belső; a `signer.ts` használja). A memó csak a már ellenőrzött bemenetre fut. */
+export function buildSignedPathWith(input: BuildSignedPathInput, memo?: TokenMemo): string {
   const { kid, tokenPath, expires, u, path } = input;
   const params: TokenParams = u === undefined ? { kid } : { kid, u };
   const signer = signerOf(input);
@@ -236,7 +247,8 @@ export function buildSignedPath(input: BuildSignedPathInput): string {
   if (!info) throw new RangeError(`media-sdk: nem kiszolgálható útvonal: ${JSON.stringify(path)}`);
   const problem = tokenPathProblem(tokenPath, path, info.app, info.kind, u);
   if (problem) throw new RangeError(`media-sdk: hibás token_path (${problem}): ${JSON.stringify(tokenPath)}`);
-  const token = tokenFor(signer, tokenPath, String(expires), params);
+  const sign = () => tokenFor(signer, tokenPath, String(expires), params);
+  const token = memo === undefined ? sign() : memo(signedMessage(tokenPath, String(expires), params), sign);
   const urlData = sortedParams(tokenPath, params)
     .map(([k, v]) => `${k}=${encodeURIComponent(v)}`)
     .join('&');

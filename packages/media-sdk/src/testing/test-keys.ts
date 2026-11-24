@@ -4,9 +4,26 @@
 //
 //   const fake = await startFakeMediaServer({ apps: testKeys.apps, root });
 //   const signer = createUrlSigner({ ...testKeys, baseUrl: fake.url, maxTtlSeconds: 3600 });
+//
+// Az ES256 séma (aszimmetrikus) CSAK TESZT kulcspárjai a `testKeys.es256`-ban (a vektorok `es256` blokkjából); a
+// `testAppsFile()` a nyilvános párjukat is felveszi (`publicKeys`, `contentPublicKeys`):
+//
+//   const signer = createUrlSigner({ app: testKeys.app, ...testKeys.es256, baseUrl: fake.url, maxTtlSeconds: 3600 });
 
 import type { AppCorp, AppsFile } from '../apps-config.js';
 import vectors from '../../test-vectors.json' with { type: 'json' };
+
+/** Az ES256 CSAK TESZT kulcspárok: a titkos kulcs a `createUrlSigner`-é, a nyilvános az `apps.json`-é. */
+export interface TestEs256Keys {
+  /** Böngészős kulcspár (`publicKeys`). */
+  readonly kid: string;
+  readonly privateKey: string;
+  readonly publicKey: string;
+  /** Tartalom-kulcspár (`contentPublicKeys`). */
+  readonly contentKid: string;
+  readonly contentPrivateKey: string;
+  readonly contentPublicKey: string;
+}
 
 /** A tesztkulcsok: a `createUrlSigner` konfigurációjának kulcsrésze és egy hozzá illő, kész `apps.json`. */
 export interface TestKeys {
@@ -18,7 +35,12 @@ export interface TestKeys {
   /** Tartalomkulcs (`contentKeys`). */
   readonly contentKid: string;
   readonly contentKey: string;
-  /** `{ [app]: { dir: '.', keys: { [kid]: key }, contentKeys: { [contentKid]: contentKey } } }` */
+  /** ES256 kulcspárok (a `privateKey` / `contentPrivateKey` a `createUrlSigner`-nek, a HMAC-kulcsok helyett). */
+  readonly es256: TestEs256Keys;
+  /**
+   * `{ [app]: { dir: '.', keys: { [kid]: key }, contentKeys: { [contentKid]: contentKey }, publicKeys: { [es256.kid]:
+   * es256.publicKey }, contentPublicKeys: { [es256.contentKid]: es256.contentPublicKey } } }`
+   */
   readonly apps: AppsFile;
 }
 
@@ -38,6 +60,7 @@ if (browserVector === undefined || contentVector === undefined) {
 }
 
 const TEST_APP = 'test-app';
+const es = vectors.es256;
 
 /**
  * Egy appos `apps.json` a tesztkulcsokkal (friss objektum minden hívásra). Más app-névvel, `dir`-rel, `origins`-szel
@@ -50,6 +73,8 @@ export function testAppsFile(options: TestAppsOptions = {}): AppsFile {
       dir,
       keys: { [browserVector!.params.kid]: browserVector!.key },
       contentKeys: { [contentVector!.params.kid]: contentVector!.key },
+      publicKeys: { [es.kid]: es.publicKey },
+      contentPublicKeys: { [es.contentKid]: es.contentPublicKey },
       ...(origins === undefined ? {} : { origins: [...origins] }),
       ...(corp === undefined ? {} : { corp }),
     },
@@ -66,7 +91,7 @@ function deepFreeze<T>(value: T): T {
 }
 
 /**
- * CSAK TESZT: a közös tesztvektorok böngészős és tartalomkulcsa, a `test-app` appal. Mélyen fagyasztott (az `apps` és
+ * CSAK TESZT: a közös tesztvektorok böngészős és tartalomkulcsa (HS256) és két ES256 kulcspárja, a `test-app` appal. Mélyen fagyasztott (az `apps` és
  * benne a `keys` / `contentKeys` is): módosítani nem lehet (szigorú módban `TypeError`); más `apps.json`-hoz a
  * `testAppsFile()` ad friss, módosítható objektumot.
  */
@@ -76,5 +101,13 @@ export const testKeys: TestKeys = deepFreeze({
   key: browserVector.key,
   contentKid: contentVector.params.kid,
   contentKey: contentVector.key,
+  es256: {
+    kid: es.kid,
+    privateKey: es.privateKey,
+    publicKey: es.publicKey,
+    contentKid: es.contentKid,
+    contentPrivateKey: es.contentPrivateKey,
+    contentPublicKey: es.contentPublicKey,
+  },
   apps: testAppsFile(),
 });

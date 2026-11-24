@@ -17,6 +17,8 @@ mezője `1` marad: a meglévő vektorok bájtra változatlanok, az `es256` blokk
   fordulnak.
 
 ### Változott
+- `testKeys.apps` / `testAppsFile()`: a `publicKeys` és a `contentPublicKeys` is benne van (a `testKeys.es256`
+  nyilvános kulcsaival); egy rá `toEqual`-lal néző fogyasztói teszt ezt felveszi.
 - Új név: `@cry/media-sdk` → `@chromygabor/media-sdk` (docs/media-sdk-kiemeles-terv.md D90: a GitHub Packages a
   hatókört a repó tulajdonosához köti). A könyvtár marad `packages/media-sdk`; a felület és a vektorok változatlanok.
 
@@ -35,6 +37,22 @@ mezője `1` marad: a meglévő vektorok bájtra változatlanok, az `es256` blokk
     `generateKeyPair()`, `publicKeyOf()`, `addPublicKey()` (felülírás nincs), `defaultKid(content, now, asymmetric)`
     (`<év>e` / `<év>f`);
   - `test-vectors.json`: új `es256` blokk CSAK TESZT kulcspárokkal, két rögzített tokennel és 15 verify-vektorral.
+- **ES256 az aláíróban, a CLI-ben és a `./testing`-ben** (aszimmetrikus terv WP51):
+  - `createUrlSigner`: `privateKey` / `contentPrivateKey` a `key` / `contentKey` helyett (egyszerre csak az egyik,
+    különben `TypeError`); **aláírás-memó** (D113): a `kid` + aláírt szöveg → token, legfeljebb
+    `SIGNATURE_MEMO_MAX_ENTRIES` (10 000) bejegyzés, a lejártak kiesnek, a határon a legrégebbi is; így az ES256-link
+    egy munkamenet alatt bájtra azonos marad. A HMAC-ág változatlan (memó nélkül is determinisztikus);
+  - `media-keys --keypair <app> [--content] [--kid]` (app oldal): új P-256 kulcspár, a backend env-sorai (titok) és az
+    üzemeltetőnek küldendő sor (nyilvános kulcs, ellenőrző jelek); fájlt nem ír. `media-keys --register <app> --kid
+    --public-key [--content] --write` (üzemeltető): `addPublicKey`, kid-ütközésre hiba, felülírás soha;
+  - `media-sign --env` / `--env-file <.env>` (D117, a kiemelési terv WP44-éből előre hozva): apps.json nélkül, a
+    SPEC 9. env-neveiből, a `MEDIA_SERVER_PRIVATE_KEYS` / `MEDIA_SERVER_CONTENT_PRIVATE_KEY`-jel is; a kulcs nem kerül
+    a kimenetbe vagy a hibaüzenetbe. Az `--apps` mód egy ES256-`kid`-re érthető hibát ad. A `signUrl` egy
+    `{ app, kid, key | privateKey }` bemenetet is elfogad;
+  - `./testing`: `testKeys.es256` (új típus: `TestEs256Keys`), a `testAppsFile()` a `publicKeys` /
+    `contentPublicKeys`-t is kitölti; a hamis szerver konformanciatesztje az `es256.verify` vektorokkal is fut; a hamis
+    szerver a hibás aláírásokat nem számolja;
+  - SPEC 9.: `MEDIA_SERVER_PRIVATE_KEYS`, `MEDIA_SERVER_CONTENT_PRIVATE_KEY`.
 - `./testing` alútvonal (`src/testing/`; csomagterv WP35): `startFakeMediaServer({ apps, root,
   now?, port?, host?, routes? })` – hamis médiaszerver `node:http`-n a SPEC szabályaival (ellenőrzési sorrend és
   státuszkódok, kiterjesztés-tábla, `<root>/<dir>/<assetKey>`, `Range` → `206`/`416`, `HEAD`, `ETag`/`304`,

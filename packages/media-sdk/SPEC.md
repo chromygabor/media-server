@@ -296,7 +296,8 @@ a fogyasztó feltöltő eszköze):
 
 ## 9. Ajánlott backend env-nevek
 
-Konvenció, nem kötelező (a `media-keys` ezeket írja ki; K: „--write: hozzáad és kiírja …”). *(a fogyasztó
+Konvenció, nem kötelező (a `media-keys` ezeket írja ki, a `media-sign --env` / `--env-file` ezeket olvassa; K:
+„--write: hozzáad és kiírja …”, „--keypair”, „media-sign --env”). *(a fogyasztó
 backend env-sémájának tesztje)*
 
 | Név | Jelentés |
@@ -304,6 +305,8 @@ backend env-sémájának tesztje)*
 | `MEDIA_SERVER_URL` | a médiaszerver alap-URL-je (élesben `https://`) |
 | `MEDIA_SERVER_APP` | az app neve az `apps.json`-ban |
 | `MEDIA_SERVER_KEYS` | böngészős kulcsok, JSON: `{ "<kid>": "<kulcs>" }` |
-| `MEDIA_SERVER_KEY_ID` | az aláíráshoz használt böngészős `kid` (szerepel a `MEDIA_SERVER_KEYS`-ben) |
+| `MEDIA_SERVER_KEY_ID` | az aláíráshoz használt böngészős `kid`; pontosan az egyik térképben szerepel (`MEDIA_SERVER_KEYS` → HS256, `MEDIA_SERVER_PRIVATE_KEYS` → ES256) |
+| `MEDIA_SERVER_PRIVATE_KEYS` | ES256 titkos kulcsok, JSON: `{ "<kid>": "<PKCS#8 DER base64url>" }`; a `kid`-halmaz diszjunkt a `MEDIA_SERVER_KEYS`-étől; a kettő közül legalább az egyik kell |
 | `MEDIA_SERVER_CONTENT_KEY_ID`, `MEDIA_SERVER_CONTENT_KEY` | a tartalomkulcs (ha az app tölt le `_content/`-et) |
+| `MEDIA_SERVER_CONTENT_PRIVATE_KEY` | ES256 tartalom-titkos kulcs, a `MEDIA_SERVER_CONTENT_KEY` helyett (a kettő kizárja egymást) |
 | `MEDIA_URL_MAX_TTL` | a böngészős link leghosszabb élettartama másodpercben (ajánlott `86400`) |

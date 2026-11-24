@@ -35,7 +35,7 @@ export {
 } from './path.js';
 export type { MediaKind, MediaPathInfo } from './path.js';
 export { KEY_ID_RE, KEY_RE, PUBLIC_KEY_RE, isValidKey, isValidKeyId, isValidPrivateKey, isValidPublicKey } from './keys.js';
-export { CONTENT_TOKEN_TTL_SECONDS, MEDIA_URL_VERSION_LENGTH, createUrlSigner } from './signer.js';
+export { CONTENT_TOKEN_TTL_SECONDS, MEDIA_URL_VERSION_LENGTH, SIGNATURE_MEMO_MAX_ENTRIES, createUrlSigner } from './signer.js';
 export type {
   SignAsset,
   SignDirectoryInput,

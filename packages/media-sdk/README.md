@@ -11,17 +11,42 @@ A védett médiaszerver (`server`) kliensoldala: aláírt URL (Bunny V2 director
 
 ```
 /bcdn_token=HS256-<sig>&kid=<kid>&token_path=<kódolt előtag>[&u=<uuid>]&expires=<unix>/<app>/<assetKey>
+/bcdn_token=ES256-<sig>&…   (ugyanaz az alak)
 
-sig = Base64URL(HMAC-SHA256(kulcs, token_path + expires + "kid=…&token_path=…[&u=…]"))
+M   = token_path + expires + "kid=…&token_path=…[&u=…]"
+sig = Base64URL(HMAC-SHA256(kulcs, M))                       HS256: Bunny-kompatibilis, közös titok
+    | Base64URL(r ‖ s), ECDSA P-256 + SHA-256 az M-en, low-S  ES256: az app saját kulcspárja (a szerver csak a
+                                                              nyilvános kulcsot ismeri); Bunny-megfelelője nincs
 ```
 
+A séma a `kid`-ből jön (`keys`/`contentKeys` → HS256, `publicKeys`/`contentPublicKeys` → ES256), soha nem a
+tokenből. Mindkettő elsőrangú; egy appnak lehetnek mindkét fajtájú `kid`-jei.
+
 ## Gyors kezdés egy új apphoz
+
+Két egyenrangú kulcsmodell, appenként és `kid`-enként választható:
+
+- **ES256 (aszimmetrikus, ajánlott új apphoz):** az app generálja a kulcspárt, az üzemeltetőhöz csak a nyilvános
+  kulcs megy. Titok nem halad át a regisztráció csatornáján.
+
+  ```sh
+  media-keys --keypair <app> [--content] [--kid <id>]      # app: env-sorok (titok) + az üzemeltetőnek küldendő sor
+  media-keys --register <app> --kid <id> --public-key <87 jel> [--content] --write apps.json   # üzemeltető
+  media-sign --env-file .env <assetKey> [--u <uuid>] [--content]                                # app: próbalink
+  ```
+
+  A backend env-je (SPEC 9.): `MEDIA_SERVER_PRIVATE_KEYS={"<kid>":"<PKCS#8 base64url>"}`, `MEDIA_SERVER_KEY_ID`,
+  tartalomhoz `MEDIA_SERVER_CONTENT_KEY_ID` + `MEDIA_SERVER_CONTENT_PRIVATE_KEY`. Az üzemeltető a nyilvános kulcs első
+  és utolsó 8 jelét egy második csatornán egyezteti (a `--keypair` kiírja).
+- **HMAC (HS256, Bunny-kompatibilis):** az üzemeltető generálja a kulcsot (`media-keys <app>`), és titkosított
+  csatornán adja át; a lépések lent.
 
 1. **Kulcs**: `media-keys <app> [--content] [--kid <id>] [--write <apps.json>] [--dir <könyvtár>]` (a monorepóban
    `pnpm media-server:keys …`). Kiírja az `apps.json`-részletet és a backend env-értékeit (SPEC 9.); `--write`-tal
    hozzáadja a fájlhoz (meglévő `kid`-et nem ír felül). A kulcs titok. Próbalink: `media-sign --apps <apps.json>
-   <app> <assetKey> [--u <uuid>] [--content] [--base <url>]`. Programból: `@chromygabor/media-sdk/apps-config`
-   (`generateKey`, `addKey`, `validateAppsFile`).
+   <app> <assetKey> [--u <uuid>] [--content] [--base <url>]` (üzemeltető), vagy az app a saját env-jéből:
+   `media-sign --env | --env-file <.env> <assetKey>`. Programból: `@chromygabor/media-sdk/apps-config`
+   (`generateKey`, `addKey`, `generateKeyPair`, `addPublicKey`, `validateAppsFile`, `checkPublicKeys`).
 2. **`apps.json`-bejegyzés és feltöltő kulcs**: `dir`, `keys`, `contentKeys`, `origins`, `corp` (SPEC 6.), és egy
    `rrsync`-re korlátozott `authorized_keys`-sor az app könyvtárára (SPEC 8.). Lépésről lépésre:
    [`server/README.md`](../../server/README.md) „Feltöltő kulcs és új app”.
@@ -33,6 +58,9 @@ sig = Base64URL(HMAC-SHA256(kulcs, token_path + expires + "kid=…&token_path=�
    ```ts
    import { createUrlSigner } from '@chromygabor/media-sdk';
    const signer = createUrlSigner({ baseUrl, app, kid, key, maxTtlSeconds: 3600, contentKid, contentKey });
+   // ES256: key helyett privateKey, contentKey helyett contentPrivateKey (PKCS#8 base64url vagy KeyObject).
+   // Az ECDSA-aláírás véletlenszerű; az aláíró egy memóval (≤ 10 000 bejegyzés, lejárattal) tartja, hogy ugyanarra
+   // a bemenetre a link a lejáratig bájtra azonos legyen (böngésző-cache). Egy aláíró = egy memó: példányonként egy.
 
    // Böngészős linkek egy hatókör-könyvtárra (pl. a lecke könyvtára, `/`-re végződik):
    const { expiresAt, results } = signer.signDirectory({
@@ -62,6 +90,7 @@ sig = Base64URL(HMAC-SHA256(kulcs, token_path + expires + "kid=…&token_path=�
 
    const fake = await startFakeMediaServer({ apps: testKeys.apps, root });   // a fájl: <root>/<assetKey> (dir: '.')
    const signer = createUrlSigner({ ...testKeys, baseUrl: fake.url, maxTtlSeconds: 3600 });
+   // ES256-tal: createUrlSigner({ app: testKeys.app, ...testKeys.es256, baseUrl: fake.url, maxTtlSeconds: 3600 })
    // … a tesztelt kód a signer linkjeit kéri le …
    expect(fake.requests.map((r) => r.status)).toEqual([200]);
    fake.override = { status: 500 };        // vagy { delayMs }, { body, headers }, { truncateAt }, vagy egy (async) függvény
@@ -72,16 +101,17 @@ sig = Base64URL(HMAC-SHA256(kulcs, token_path + expires + "kid=…&token_path=�
 
 | Függvény | Mit csinál |
 | --- | --- |
-| `signToken({ key, tokenPath, expires, params: { kid, u? } })` | a `HS256-…` token |
-| `buildSignedPath({ key, kid, tokenPath, expires, u?, path })` | a teljes aláírt útvonal; csak a szerver által elfogadható linket írja alá (különben `RangeError`) |
+| `signToken({ key \| privateKey, tokenPath, expires, params: { kid, u? } })` | a `HS256-…` (`key`) vagy `ES256-…` (`privateKey`) token |
+| `buildSignedPath({ key \| privateKey, kid, tokenPath, expires, u?, path })` | a teljes aláírt útvonal; csak a szerver által elfogadható linket írja alá (különben `RangeError`) |
 | `parseSignedPath(rawRequestUri)` | a nyers URI szigorú szétszedése (SPEC 1.) |
 | `verifySignedPath(rawRequestUri, lookupApp, now)` | ellenőrzés a szerver sorrendjében (SPEC 4.): `status` és `reason` |
 | `appLookupFrom(apps)` | kulcskereső egy `{ <app>: { keys, contentKeys } }` objektumból (csak saját mezők) |
 | `bucketExpires(now, { hours = 6 })` | az óra eleje + 6 óra (próbalinkekhez) |
 | `isSafeSegment`, `isSafeMediaPath`, `isSafeTokenPath`, `isPrefixOf`, `classifyMediaPath` | útvonal-szabályok (SPEC 2.1, 3.) |
 | `MEDIA_CONTENT_TYPES`, `CONTENT_DIR`, `CONTENT_FILE_EXT`, `CONTENT_FILE_TYPE` | kiterjesztés-tábla (SPEC 3.) |
-| `createUrlSigner({ baseUrl, app, kid?, key?, maxTtlSeconds?, contentKid?, contentKey?, contentTtlSeconds?, now? })` | URL-aláíró: `signDirectory(…)` (böngészős linkek egy hatókörre) és `signContentFile(version)` (tartalom-token); az elutasítás ok-kódja `SignRefusal` |
-| `MEDIA_URL_VERSION_LENGTH`, `CONTENT_TOKEN_TTL_SECONDS` | a `?v=` hossza (12) és a tartalom-token alap-élettartama (300 mp) |
+| `createUrlSigner({ baseUrl, app, kid?, key? \| privateKey?, maxTtlSeconds?, contentKid?, contentKey? \| contentPrivateKey?, contentTtlSeconds?, now? })` | URL-aláíró: `signDirectory(…)` (böngészős linkek egy hatókörre) és `signContentFile(version)` (tartalom-token); az elutasítás ok-kódja `SignRefusal`. ES256-ra aláírás-memó (`kid` + aláírt szöveg → token) |
+| `MEDIA_URL_VERSION_LENGTH`, `CONTENT_TOKEN_TTL_SECONDS`, `SIGNATURE_MEMO_MAX_ENTRIES` | a `?v=` hossza (12), a tartalom-token alap-élettartama (300 mp) és az aláírás-memó mérete (10 000) |
+| `PUBLIC_KEY_RE`, `isValidPublicKey`, `isValidPrivateKey`, `KEY_ID_RE`, `KEY_RE`, `isValidKeyId`, `isValidKey` | kulcs- és `kid`-alakok (SPEC 6.) |
 | `base64url`, `timingSafeEqualStr` | segédek |
 
 `@chromygabor/media-sdk/apps-config` (az `apps.json`, SPEC 6.):
@@ -92,8 +122,11 @@ sig = Base64URL(HMAC-SHA256(kulcs, token_path + expires + "kid=…&token_path=�
 | `validateAppsFile(value)` | a szerver (njs `validateApps`) szabályai: `{ ok: true, apps }` vagy `{ ok: false, errors }`; a hibaüzenet kulcsot nem idéz |
 | `isValidAppName(name)` | app-név: biztonságos szegmens, nem `_`-os |
 | `generateKey()` | új kulcs: 32 véletlen bájt base64url-szövege (43 jel) |
-| `defaultKid(content, now?)` | alap `kid`: `<év>a` / `<év>c` |
+| `defaultKid(content, now?, asymmetric?)` | alap `kid`: `<év>a` / `<év>c`, ES256-ra `<év>e` / `<év>f` |
 | `addKey(apps, { app, kid, key, content, dir? })` | kulcs hozzáadása (új objektum; új app `dir` = app-név, `origins: []`, `corp: same-site`); meglévő `kid`-re hiba |
+| `generateKeyPair()`, `publicKeyOf(privateKey)` | ES256 kulcspár (`{ privateKey, publicKey }`), illetve a titkoshoz tartozó nyilvános kulcs |
+| `addPublicKey(apps, { app, kid, publicKey, content, dir? })` | nyilvános kulcs felvétele (`publicKeys` / `contentPublicKeys`); meglévő `kid`-re vagy kulcsra hiba |
+| `checkPublicKeys(apps)` | a nyilvános kulcsok görbe-ellenőrzése (a hibák listája, kulcs nélkül) |
 
 `@chromygabor/media-sdk/testing` (csak tesztkódból):
 
@@ -103,11 +136,13 @@ sig = Base64URL(HMAC-SHA256(kulcs, token_path + expires + "kid=…&token_path=�
 | `FakeMediaServer.requests` | a kérések naplója (`method`, `uri`, `path` token nélkül, `expires`, `range`, `origin`, `verify`, `status`). A `verify` érkezéskor számolódik, és a tartás (`delayMs`, `override`-függvény) után a pillanatnyi órával újra: tartás közben (`status` = `0`) még az érkezéskori eredmény, a válasz után a döntő |
 | `FakeMediaServer.override` | eltérés a szabályos választól: `{ status?, delayMs?, body?, headers?, truncateAt? }`, vagy egy kérésenként hívott (async) függvény – amíg ez vár, a kérés is; a token utána, a pillanatnyi órával dől el |
 | `now` / `routes` | az óra (Unix-ezredmásodperc, mint a `createUrlSigner`-nél) és saját végpontok (pl. egy másik folyamatból hívható vezérlő) |
-| `testKeys` | CSAK TESZT: `{ app: 'test-app', kid, key, contentKid, contentKey, apps }` a közös tesztvektorokból; a `createUrlSigner`-nek szétteríthető. Mélyen fagyasztott (az `apps` is), módosítani nem lehet |
-| `testAppsFile({ app?, dir?, origins?, corp? })` | ugyanezekkel a kulcsokkal más app-névre, `dir`-re, `origins`-re, `corp`-ra (alapból `dir: '.'`); friss, módosítható objektum. A `corp: 'cross-origin'` kell, ha az e2e oldal és a hamis szerver hosztja eltér (`localhost` / `127.0.0.1`) |
+| `testKeys` | CSAK TESZT: `{ app: 'test-app', kid, key, contentKid, contentKey, es256, apps }` a közös tesztvektorokból; a `createUrlSigner`-nek szétteríthető (ES256-hoz a `testKeys.es256`: `kid`, `privateKey`, `publicKey`, `contentKid`, `contentPrivateKey`, `contentPublicKey`). A hamis szerver mindkét sémát ismeri (`wrong-scheme` is); a hibás aláírásokat nem számolja (a valódi szerver elhagyható `429`-e nincs benne). Mélyen fagyasztott (az `apps` is), módosítani nem lehet |
+| `testAppsFile({ app?, dir?, origins?, corp? })` | ugyanezekkel a kulcsokkal (a `publicKeys` / `contentPublicKeys` is) más app-névre, `dir`-re, `origins`-re, `corp`-ra (alapból `dir: '.'`); friss, módosítható objektum. A `corp: 'cross-origin'` kell, ha az e2e oldal és a hamis szerver hosztja eltér (`localhost` / `127.0.0.1`) |
 
 Parancsok (`bin`): `media-keys` és `media-sign` (`--help`). Az `apps.json` útvonalát argumentumként kapják
-(`--write`, illetve a kötelező `--apps`), alapértelmezett útvonal nincs. A hibás JSON-ú fájl hibaüzenete a fájl
+(`--write`, illetve az `--apps`), alapértelmezett útvonal nincs. A `media-keys --keypair` fájlt nem ír; a
+`--register` kid-ütközésre hibát ad, és soha nem ír felül. A `media-sign --env` / `--env-file` az app saját env-jéből
+(SPEC 9.) ír alá, `apps.json` nélkül; ES256-os `kid`-hez csak így lehet (az `--apps` mód érthető hibát ad). A hibás JSON-ú fájl hibaüzenete a fájl
 szövegét nem idézi (legfeljebb sort és oszlopot ad).
 
 ## Közös tesztvektorok
