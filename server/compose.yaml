@@ -1,5 +1,5 @@
 # A médiaszerver helyi futtatása és docker-tesztje (kiemelési terv WP49; terv 4.4, 7.2). Csak fejlesztésre: a
-# szerveres telepítés a ../deploy/compose.yaml (ugyanez a keményítés, a kész image címkéjével).
+# célgépi telepítés a ../deploy/compose.yaml (ugyanez a keményítés, a kész image címkéjével).
 # Az image a Dockerfile-ból épül (a konfig és az njs benne van); csak az apps.json és a médiagyökér csatolt.
 #
 #   docker compose up -d --build --wait                                         # konfig- / njs-változás után is

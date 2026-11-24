@@ -1,6 +1,6 @@
 // A konfigfájlok összhangja (implementációs terv WP2 7.; csomagterv WP32, WP33): a kiterjesztés-tábla, a kulcs-regexek
 // és az apps.json-validálás a `@chromygabor/media-sdk`-é (a backend is onnan importál); a compose minden változója a
-// .env.example-ben; rögzített alap-image (Dockerfile); a napló nem tartalmazhat tokent. A szerveres telepítés
+// .env.example-ben; rögzített alap-image (Dockerfile); a napló nem tartalmazhat tokent. A generikus telepítés
 // (deploy/) ellenőrzése: deploy.spec.ts.
 
 import { readFileSync } from 'node:fs';

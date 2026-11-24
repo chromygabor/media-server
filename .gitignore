@@ -12,9 +12,9 @@ coverage/
 **/secrets/*
 !server/secrets/README.md
 
-# Telepítések (WP49): a szerver .env-je és a titkok helyi példánya (pl. deploy/secrets/apps.json).
-deploy/*/.env
-deploy/*/secrets/
+# Telepítési célok: a deploy/ alatti minden alkönyvtár (deploy/<cél>/: a cél .env-je, a secrets/apps.json helyi
+# példánya) a telepítés saját adata, soha nem kerül a repóba. A deploy/ közvetlen fájljai (generikus) követettek.
+deploy/*/
 
 # Generált szintetikus mintamédia (pnpm dev-media)
 server/dev-media/

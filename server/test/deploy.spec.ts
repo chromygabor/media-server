@@ -1,12 +1,14 @@
-// A szerveres telepítés (deploy/; kiemelési terv WP49, implementációs terv WP4) összhangja a termékkel:
-// a compose a server/compose.yaml keményítését viszi, csak a címkézett image-et futtatja; a .env.example minden
-// változót ismer; a host-blokk a nyers URI-t a loopback-portra adja; a deploy.sh csak a compose.yaml-t szinkronizálja,
-// sudo nélkül, és a hibás kapcsolót / DEPLOY_DIR-t a szerver érintése előtt elutasítja.
+// A generikus telepítés (deploy/) összhangja a termékkel: a compose a server/compose.yaml keményítését viszi, csak a
+// címkézett image-et futtatja; a .env.example minden változót ismer; a host-blokk a nyers URI-t a loopback-portra
+// adja; a deploy.sh csak a compose.yaml-t szinkronizálja, sudo nélkül, a célt (deploy/<cél>/.env) kötelezően kéri,
+// és a hibás kapcsolót / célt / DEPLOY_DIR-t a szerver érintése előtt elutasítja. A cél-könyvtárak gitignore-oltak.
 
 import { spawnSync } from 'node:child_process';
-import { readFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { describe, expect, it } from 'vitest';
+import { afterAll, describe, expect, it } from 'vitest';
 
 const DEPLOY_DIR = fileURLToPath(new URL('../../deploy/', import.meta.url));
 const readDeploy = (rel: string): string => readFileSync(`${DEPLOY_DIR}${rel}`, 'utf8');
@@ -17,6 +19,8 @@ const devCompose = readServer('compose.yaml');
 const envExample = readDeploy('.env.example');
 const host = readDeploy('host-nginx.conf.example');
 const deploy = readDeploy('deploy.sh');
+const targetExample = readDeploy('target.env.example');
+const gitignore = readFileSync(new URL('../../.gitignore', import.meta.url), 'utf8');
 
 const envVars = new Map(
   envExample
@@ -82,23 +86,57 @@ describe('host-nginx blokk (WP4)', () => {
     expect(host).toMatch(/^\s*proxy_cache off;/m);
     expect(host).toMatch(/^\s*proxy_set_header X-Forwarded-For \$remote_addr;/m);
     expect(host).toMatch(/^\s*server_name media\.example\.com;/m);
+    expect(host).toMatch(/^\s*listen 443 ssl;/m);
   });
 });
 
-describe('deploy.sh (WP49)', () => {
-  const run = (args: string[], env: Record<string, string> = {}) =>
-    spawnSync('bash', [`${DEPLOY_DIR}deploy.sh`, ...args], {
+describe('telepítési célok (deploy/<cél>/)', () => {
+  it('minden cél-könyvtár gitignore-olt, a generikus fájlok nem', () => {
+    const lines = gitignore.split('\n').map((l) => l.trim());
+    expect(lines).toContain('deploy/*/');
+    expect(lines.filter((l) => l.startsWith('!deploy'))).toEqual([]);
+  });
+
+  it('a target.env.example csak a deploy.sh által ismert DEPLOY_* kulcsokat mutatja, helyőrzőkkel', () => {
+    const keys = [...targetExample.matchAll(/^#?\s*([A-Z_]+)=/gm)].map((m) => m[1]);
+    const known = /target_keys=\(([^)]*)\)/.exec(deploy)?.[1]?.split(/\s+/) ?? [];
+    expect(known).toEqual(['DEPLOY_HOST', 'DEPLOY_USER', 'DEPLOY_DIR', 'DEPLOY_SSH_OPTS', 'DEPLOY_TRANSPORT']);
+    expect(new Set(keys)).toEqual(new Set(known));
+    expect(targetExample).toMatch(/^DEPLOY_HOST=media-host$/m);
+    expect(targetExample).toMatch(/^DEPLOY_DIR=\/srv\/media-server$/m);
+  });
+
+  it('a deploy.sh megáll, ha a cél könyvtárában követett fájl van', () => {
+    expect(deploy).toMatch(/git -C "\$ROOT" ls-files -- "\$TARGET_DIR"/);
+  });
+});
+
+describe('deploy.sh', () => {
+  const scratch = mkdtempSync(join(tmpdir(), 'media-deploy-spec-'));
+  const target = (name: string, env: string): string => {
+    const dir = join(scratch, name);
+    rmSync(dir, { recursive: true, force: true });
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(join(dir, '.env'), env);
+    return dir;
+  };
+  afterAll(() => rmSync(scratch, { recursive: true, force: true }));
+  const good = target('jo', 'DEPLOY_HOST=nem-letezo.invalid\nDEPLOY_USER=deploy\n');
+  const run = (args: string[], env: Record<string, string> = {}) => {
+    const clean = Object.fromEntries(Object.entries(process.env).filter(([k]) => !k.startsWith('DEPLOY_')));
+    return spawnSync('bash', [`${DEPLOY_DIR}deploy.sh`, ...args], {
       encoding: 'utf8',
-      env: { ...process.env, DEPLOY_HOST: 'nem-letezo.invalid', ...env },
+      env: { ...clean, ...env },
       timeout: 15_000,
     });
+  };
 
   it('csak a compose.yaml-t szinkronizálja (--delete nélkül), sudo nélkül', () => {
     expect(deploy).toMatch(/^set -euo pipefail$/m);
     expect(deploy).not.toMatch(/\bsudo\s+(?!install -d)/);
     expect(deploy).not.toMatch(/--delete/);
     const dests = [...deploy.matchAll(/DEST="([^"]*)"/g)].map((m) => m[1]);
-    expect(dests).toEqual(['$TARGET:$DEPLOY_DIR/compose.yaml', '$DEPLOY_DIR/compose.yaml']);
+    expect(dests).toEqual(['$REMOTE:$DEPLOY_DIR/compose.yaml', '$DEPLOY_DIR/compose.yaml']);
     expect([...deploy.matchAll(/^\s*"\$\{RSYNC\[@\]\}"/gm)]).toHaveLength(1);
   });
 
@@ -115,22 +153,47 @@ describe('deploy.sh (WP49)', () => {
     expect(deploy.indexOf('remote verify')).toBeLessThan(deploy.indexOf('remote switch'));
   });
 
-  it('--help: 0; ismeretlen kapcsoló, kizáró kapcsolók, --keep < 2: 2; hibás DEPLOY_DIR / átvitel: 1 (a szerver érintése előtt)', () => {
+  it('--help: 0 (cél nélkül is); ismeretlen kapcsoló, kizáró kapcsolók, --keep < 2, hiányzó cél: 2', () => {
     const help = run(['--help']);
     expect(help.status).toBe(0);
     expect(help.stdout).toMatch(/--rollback/);
     expect(help.stdout).toMatch(/--reload-config/);
-    expect(run(['--bogus']).status).toBe(2);
-    expect(run(['--rollback', '--reload-config']).status).toBe(2);
-    expect(run(['--keep', '1']).status).toBe(2);
-    expect(run(['--rollback', '--allow-dirty']).status).toBe(2);
-    expect(run(['--reload-config', '--keep', '3']).status).toBe(2);
-    const root = run(['--rollback'], { DEPLOY_DIR: '/' });
+    expect(help.stdout).toMatch(/<cél>/);
+    expect(run([good, '--bogus']).status).toBe(2);
+    expect(run([good, '--rollback', '--reload-config']).status).toBe(2);
+    expect(run([good, '--keep', '1']).status).toBe(2);
+    expect(run([good, '--rollback', '--allow-dirty']).status).toBe(2);
+    expect(run([good, '--reload-config', '--keep', '3']).status).toBe(2);
+    expect(run([good, good, '--rollback']).status).toBe(2);
+    const none = run(['--rollback']);
+    expect(none.status).toBe(2);
+    expect(none.stderr).toMatch(/cél/);
+  });
+
+  it('hibás cél, cél-.env, DEPLOY_DIR vagy átvitel: 1, a szerver érintése előtt', () => {
+    expect(run(['nincs-ilyen-cel', '--rollback']).stderr).toMatch(/nem létezik/);
+    expect(run(['nincs-ilyen-cel', '--rollback']).status).toBe(1);
+    expect(run(['../kifele', '--rollback']).status).toBe(1);
+    expect(run([join(scratch, 'nincs'), '--rollback']).status).toBe(1);
+    const noEnv = join(scratch, 'ures');
+    mkdirSync(noEnv, { recursive: true });
+    expect(run([noEnv, '--rollback']).stderr).toMatch(/\.env/);
+    const unknown = run([target('ismeretlen', 'DEPLOY_HOST=x\nMEDIA_ROOT=/srv\n'), '--rollback']);
+    expect(unknown.status).toBe(1);
+    expect(unknown.stderr).toMatch(/ismeretlen kulcs/);
+    const noHost = run([target('hosztnelkul', 'DEPLOY_USER=deploy\n'), '--rollback']);
+    expect(noHost.status).toBe(1);
+    expect(noHost.stderr).toMatch(/DEPLOY_HOST/);
+    const root = run([target('gyoker', 'DEPLOY_HOST=x\nDEPLOY_DIR=/\n'), '--rollback']);
     expect(root.status).toBe(1);
     expect(root.stderr).toMatch(/DEPLOY_DIR/);
-    expect(run(['--rollback'], { DEPLOY_DIR: 'relativ' }).status).toBe(1);
-    const transport = run(['--rollback'], { DEPLOY_TRANSPORT: 'ftp' });
+    expect(run([target('relativ', 'DEPLOY_HOST=x\nDEPLOY_DIR="relativ"\n'), '--rollback']).status).toBe(1);
+    const transport = run([good, '--rollback'], { DEPLOY_TRANSPORT: 'ftp' });
     expect(transport.status).toBe(1);
     expect(transport.stderr).toMatch(/DEPLOY_TRANSPORT/);
+    // A környezet felülírja a cél .env-jét; a DEPLOY_TARGET is megadhatja a célt.
+    const envRoot = run(['--rollback'], { DEPLOY_TARGET: good, DEPLOY_DIR: '/' });
+    expect(envRoot.status).toBe(1);
+    expect(envRoot.stderr).toMatch(/DEPLOY_DIR/);
   });
 });

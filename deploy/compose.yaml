@@ -1,5 +1,5 @@
-# A médiaszerver szerveres telepítése (kiemelési terv WP49; terv 7.3). A deploy.sh másolja a DEPLOY_DIR-be
-# (/srv/media-server/compose.yaml); a .env, a secrets/ és a data/ a szerveren marad.
+# A médiaszerver telepítése egy célgépre. A deploy.sh másolja a DEPLOY_DIR-be (pl. /srv/media-server/compose.yaml);
+# a .env, a secrets/ és a data/ a szerveren marad.
 # Az image a helyben épített és tesztelt media-server:<verzió>-<SHA> (docker save | ssh docker load, regisztry
 # nélkül); a címkét a .env IMAGE_TAG-je adja, ezt a deploy.sh állítja (az előzőt a PREVIOUS_IMAGE_TAG őrzi).
 # A keményítés ugyanaz, mint a server/compose.yaml-é (a server/test/deploy.spec.ts ellenőrzi).

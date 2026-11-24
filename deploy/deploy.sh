@@ -1,15 +1,20 @@
 #!/usr/bin/env bash
-# A médiaszerver telepítése a szerverre: tesztelt image, regisztry nélkül (kiemelési terv WP49; terv 7.3).
+# A médiaszerver telepítése egy célgépre: tesztelt image, regisztry nélkül.
 #
-#   deploy/deploy.sh [--dry-run] [--allow-dirty] [--keep N]      (gyökérből: pnpm server:deploy …)
-#   deploy/deploy.sh --rollback [--dry-run]                       vissza a PREVIOUS_IMAGE_TAG-re
-#   deploy/deploy.sh --reload-config [--dry-run]                  új apps.json élesítése, image-csere nélkül
+#   deploy/deploy.sh <cél> [--dry-run] [--allow-dirty] [--keep N]     (gyökérből: pnpm server:deploy <cél> …)
+#   deploy/deploy.sh <cél> --rollback [--dry-run]                      vissza a PREVIOUS_IMAGE_TAG-re
+#   deploy/deploy.sh <cél> --reload-config [--dry-run]                 új apps.json élesítése, image-csere nélkül
+#
+# A <cél> egy telepítés könyvtára: egy név (deploy/<név>/) vagy egy útvonal (benne /-rel). A cél a DEPLOY_TARGET
+# változóval is megadható. A könyvtár gitignore-olt (deploy/*/), és csak a telepítésre jellemző fájlokat tartalmazza:
+# a .env-et (DEPLOY_HOST, DEPLOY_USER, DEPLOY_DIR, DEPLOY_SSH_OPTS, DEPLOY_TRANSPORT; minta: deploy/target.env.example),
+# és ha kell, az apps.json helyi példányát (secrets/apps.json). A környezetben megadott DEPLOY_* felülírja a .env-et.
 #
 # Deploy: 1. helyben image a server/Dockerfile-ból (server/scripts/image-build.sh: media-server:<verzió>-<SHA>,
 # OCI-címkék; piszkos munkafánál megtagad, --allow-dirty nélkül); 2. a docker-teszt EZEN az image-en
 # (MEDIA_IMAGE=…, MEDIA_DOCKER_REQUIRED=1): csak tesztelt image megy ki; 3. a szerver ellenőrzése (csak olvasás);
 # 4. átvitel: docker save | gzip | ssh … docker load (kimarad, ha a címke ugyanazzal a tartalommal már ott van); 5. rsync CSAK a
-# compose.yaml-ra (a régi compose.yaml.prev néven marad); 6. a szerveren az ÚJ image-dzsel és a mostani apps.json-nal,
+# deploy/compose.yaml-ra (a régi compose.yaml.prev néven marad); 6. a szerveren az ÚJ image-dzsel és a mostani apps.json-nal,
 # eldobható konténerben: compose config, check-apps.js, nginx -t (a futó konténer közben fut); 7. váltás: a .env
 # IMAGE_TAG-je az új, a PREVIOUS_IMAGE_TAG a régi címke (atomikusan; a .env egyetlen írása), up -d --wait, /healthz;
 # hibánál a .env és a konténer vissza a régi címkére; 8. csak --keep N-nel (N >= 2): a régi media-server:<verzió>-<SHA>
@@ -18,18 +23,13 @@
 # --reload-config: check-apps.js + nginx -t a futó címkével, up -d --wait, majd ha az apps.json inode-ja változott
 # (atomikus csere) restart, különben nginx -s reload; /healthz. A kulcsforgatás rutinlépése.
 # --dry-run: a helyi lépések (deploynál építés és teszt), a szerver ellenőrzése és a terv; a szerveren semmi nem változik.
-# A .env, a secrets/ és a data/ a szerveren marad; a szkript ezekbe nem ír és nem töröl (kivétel: a 7. lépés két sora).
-# Környezet: DEPLOY_HOST (media-host), DEPLOY_USER (deploy), DEPLOY_DIR (/srv/media-server), DEPLOY_SSH_OPTS,
-# DEPLOY_TRANSPORT (ssh; a főpróbához local: ssh és távoli gép nélkül, a „szerver” a helyi gép és a DEPLOY_DIR).
+# A szerveren a .env, a secrets/ és a data/ marad; a szkript ezekbe nem ír és nem töröl (kivétel: a 7. lépés két sora).
+# A cél .env-jének kulcsai: DEPLOY_HOST (ssh-nál kötelező), DEPLOY_USER (üresen az ssh-konfig szerint), DEPLOY_DIR
+# (alap /srv/media-server), DEPLOY_SSH_OPTS (alap -o BatchMode=yes -o ConnectTimeout=10), DEPLOY_TRANSPORT (ssh;
+# a főpróbához local: ssh és távoli gép nélkül, a „szerver” a helyi gép és a DEPLOY_DIR).
 # Sudo nincs benne; az egyszeri sudo-lépések a deploy/README.md-ben.
 
 set -euo pipefail
-
-DEPLOY_HOST=${DEPLOY_HOST:-media-host}
-DEPLOY_USER=${DEPLOY_USER:-deploy}
-DEPLOY_DIR=${DEPLOY_DIR:-/srv/media-server}
-DEPLOY_SSH_OPTS=${DEPLOY_SSH_OPTS:-"-o BatchMode=yes -o ConnectTimeout=10"}
-DEPLOY_TRANSPORT=${DEPLOY_TRANSPORT:-ssh}
 
 usage() {
   awk 'NR == 1 { next } /^#/ { sub(/^# ?/, ""); print; next } { exit }' "$0"
@@ -39,6 +39,7 @@ MODE=deploy
 DRY_RUN=0
 ALLOW_DIRTY=0
 KEEP=""
+TARGET_ARG=""
 set_mode() {
   if [[ "$MODE" != deploy ]]; then
     echo "deploy: a --rollback és a --reload-config kizárja egymást" >&2
@@ -65,9 +66,16 @@ while [[ $# -gt 0 ]]; do
       usage
       exit 0
       ;;
-    *)
+    -*)
       echo "deploy: ismeretlen kapcsoló: $1 (lásd --help)" >&2
       exit 2
+      ;;
+    *)
+      if [[ -n "$TARGET_ARG" ]]; then
+        echo "deploy: csak egy cél adható meg ($TARGET_ARG, $1)" >&2
+        exit 2
+      fi
+      TARGET_ARG=$1
       ;;
   esac
   shift
@@ -87,16 +95,59 @@ die() {
 }
 step() { echo "==> $*"; }
 
-ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
-SRC_DIR="$ROOT/deploy/media-host"
+ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
+SRC_DIR="$ROOT/deploy"
 SERVER_DIR="$ROOT/server"
-TARGET="${DEPLOY_USER}@${DEPLOY_HOST}"
+
+# --- a cél (telepítés) könyvtára és .env-je -----------------------------------------------------------------------
+TARGET_ARG=${TARGET_ARG:-${DEPLOY_TARGET:-}}
+if [[ -z "$TARGET_ARG" ]]; then
+  echo "deploy: a cél hiányzik: deploy/deploy.sh <cél> … vagy DEPLOY_TARGET=<cél> (lásd --help, deploy/README.md)" >&2
+  exit 2
+fi
+if [[ "$TARGET_ARG" == */* ]]; then
+  TARGET_DIR=$TARGET_ARG
+else
+  [[ "$TARGET_ARG" =~ ^[A-Za-z0-9_][A-Za-z0-9_.-]*$ ]] || die "érvénytelen célnév: '$TARGET_ARG'"
+  TARGET_DIR="$SRC_DIR/$TARGET_ARG"
+fi
+[[ -d "$TARGET_DIR" ]] || die "a cél könyvtára nem létezik: $TARGET_DIR (új cél: deploy/README.md „Új cél”)"
+TARGET_DIR=$(cd "$TARGET_DIR" && pwd)
+TARGET_ENV="$TARGET_DIR/.env"
+[[ -f "$TARGET_ENV" ]] || die "a cél .env-je hiányzik: $TARGET_ENV (minta: deploy/target.env.example)"
+# A cél könyvtára soha nem kerülhet a repóba (deploy/*/ gitignore-olt); ha mégis követett fájl van benne, megállunk.
+if git -C "$ROOT" rev-parse --is-inside-work-tree >/dev/null 2>&1 && [[ -n "$(git -C "$ROOT" ls-files -- "$TARGET_DIR" 2>/dev/null)" ]]; then
+  die "a cél könyvtárában követett (git) fájl van: $TARGET_DIR – a telepítés adatai nem kerülhetnek a repóba"
+fi
+# A .env csak DEPLOY_* kulcsokat tartalmazhat; a környezetben már megadott érték elsőbbséget kap.
+target_keys=(DEPLOY_HOST DEPLOY_USER DEPLOY_DIR DEPLOY_SSH_OPTS DEPLOY_TRANSPORT)
+while IFS= read -r line || [[ -n "$line" ]]; do
+  [[ "$line" =~ ^[[:space:]]*(#|$) ]] && continue
+  [[ "$line" =~ ^[[:space:]]*([A-Z_][A-Z0-9_]*)[[:space:]]*=(.*)$ ]] || die "a cél .env-jének sora nem KULCS=érték alakú: $line"
+  key=${BASH_REMATCH[1]}
+  val=${BASH_REMATCH[2]}
+  val=${val#"${val%%[![:space:]]*}"}
+  val=${val%"${val##*[![:space:]]}"}
+  if [[ "$val" == \"*\" || "$val" == \'*\' ]]; then val=${val:1:${#val}-2}; fi
+  [[ " ${target_keys[*]} " == *" $key "* ]] || die "ismeretlen kulcs a cél .env-jében: $key (megengedett: ${target_keys[*]})"
+  [[ -n "${!key+x}" ]] || printf -v "$key" '%s' "$val"
+done <"$TARGET_ENV"
+
+DEPLOY_HOST=${DEPLOY_HOST:-}
+DEPLOY_USER=${DEPLOY_USER:-}
+DEPLOY_DIR=${DEPLOY_DIR:-/srv/media-server}
+DEPLOY_SSH_OPTS=${DEPLOY_SSH_OPTS:-"-o BatchMode=yes -o ConnectTimeout=10"}
+DEPLOY_TRANSPORT=${DEPLOY_TRANSPORT:-ssh}
+REMOTE="${DEPLOY_USER:+$DEPLOY_USER@}${DEPLOY_HOST}"
 read -r -a SSH_OPTS <<<"$DEPLOY_SSH_OPTS"
 
 [[ "$DEPLOY_DIR" == /* && "$DEPLOY_DIR" != / ]] || die "a DEPLOY_DIR abszolút útvonal legyen, és ne a / ($DEPLOY_DIR)"
 [[ "$DEPLOY_DIR" != *[[:space:]]* ]] || die "a DEPLOY_DIR nem tartalmazhat szóközt ($DEPLOY_DIR)"
 case "$DEPLOY_TRANSPORT" in
-  ssh) WHERE="$TARGET:$DEPLOY_DIR" ;;
+  ssh)
+    [[ -n "$DEPLOY_HOST" ]] || die "a DEPLOY_HOST hiányzik (a cél .env-je: $TARGET_ENV)"
+    WHERE="$REMOTE:$DEPLOY_DIR"
+    ;;
   local) WHERE="(helyi főpróba) $DEPLOY_DIR" ;;
   *) die "a DEPLOY_TRANSPORT ssh vagy local lehet ($DEPLOY_TRANSPORT)" ;;
 esac
@@ -117,7 +168,7 @@ ssh_run() {
   if [[ "$DEPLOY_TRANSPORT" == local ]]; then
     bash -c "$*"
   else
-    ssh "${SSH_OPTS[@]}" "$TARGET" "$@"
+    ssh "${SSH_OPTS[@]}" "$REMOTE" "$@"
   fi
 }
 
@@ -374,10 +425,10 @@ if [[ "$MODE" == deploy ]]; then
 fi
 
 # --- a szerver ellenőrzése (csak olvasás) -----------------------------------------------------------------------
-step "a szerver ellenőrzése: $WHERE"
+step "a szerver ellenőrzése: $WHERE (cél: $TARGET_DIR)"
 if [[ "$DEPLOY_TRANSPORT" == ssh ]]; then
   ssh_err=$(ssh_run true 2>&1) ||
-    die "nem érem el ssh-n: $TARGET (DEPLOY_HOST / DEPLOY_USER, kulcsos belépés?): ${ssh_err:-ismeretlen hiba}"
+    die "nem érem el ssh-n: $REMOTE (DEPLOY_HOST / DEPLOY_USER a $TARGET_ENV-ben, kulcsos belépés?): ${ssh_err:-ismeretlen hiba}"
 fi
 check_out=$(remote check "$DEPLOY_DIR" "$IMAGE" "$IMAGE_FP") || exit 1
 old_compose_inode=$(kv compose-inode "$check_out")
@@ -435,7 +486,7 @@ esac
 RSYNC=(rsync -t --checksum --chmod=F644 --backup --suffix=.prev --itemize-changes)
 if [[ "$DEPLOY_TRANSPORT" == ssh ]]; then
   RSYNC+=(-e "ssh ${DEPLOY_SSH_OPTS}")
-  DEST="$TARGET:$DEPLOY_DIR/compose.yaml"
+  DEST="$REMOTE:$DEPLOY_DIR/compose.yaml"
 else
   DEST="$DEPLOY_DIR/compose.yaml"
 fi

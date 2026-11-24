@@ -1,14 +1,14 @@
-# media.example.com -> médiaszerver (Docker, 127.0.0.1:10090)
-# terv 7.3, implementációs terv WP4; minta: /etc/nginx/sites-available/other-site.
-# Helye a szerveren: /etc/nginx/sites-available/media-site (+ symlink a sites-enabled-be; README).
-# A sima HTTP (80) -> HTTPS átirányítást és a certbot challenge-et a 00-http site kezeli; itt nem kell semmi.
+# media.example.com -> médiaszerver (Docker, 127.0.0.1:10090). Minta a célgép host-nginxéhez: a media.example.com,
+# a tanúsítvány útvonala és a port (a szerver .env PORT-ja) a saját értékre cserélendő.
+# Helye a szerveren pl. /etc/nginx/sites-available/media-server (+ symlink a sites-enabled-be; deploy/README.md).
+# A sima HTTP (80) -> HTTPS átirányítást és a certbot challenge-et feltehetően egy külön site kezeli; itt nincs.
 
 server {
     listen 443 ssl;
     listen [::]:443 ssl;
     server_name media.example.com;
 
-    # A wildcard tanúsítvány (*.example.com) – ugyanaz, mint a other-site-é; certbot nem kell.
+    # A tanúsítvány (itt egy *.example.com wildcard; egy saját certbot-tanúsítvány is jó).
     ssl_certificate /etc/letsencrypt/live/example.com/fullchain.pem;
     ssl_certificate_key /etc/letsencrypt/live/example.com/privkey.pem;
     include snippets/ssl-params.conf;
