@@ -1,4 +1,4 @@
-# @workspace/media-token
+# @cry/media-sdk
 
 A védett médiaszerver aláírt URL-je (Bunny V2 directory-token, IP-kötés nélkül, `kid` és `u` kiegészítéssel).
 Tervek: a terv 4.1–4.4, az implementációs terv WP1.
@@ -29,7 +29,7 @@ sig = Base64URL(HMAC-SHA256(kulcs, token_path + expires + "kid=…&token_path=�
 
 ## Közös tesztvektorok
 
-`test-vectors.json` (exportálva: `@workspace/media-token/test-vectors.json`) – ezt olvassa a TS-teszt (`src/vectors.spec.ts`)
+`test-vectors.json` (exportálva: `@cry/media-sdk/test-vectors.json`) – ezt olvassa a TS-teszt (`src/vectors.spec.ts`)
 és a médiaszerver njs-tesztje is. A `sign` esetek közül a `source: "bunny-official-nodejs@<commit>"` jelölésűek a Bunny
 hivatalos Node-példájának (`BunnyCDN.TokenAuthentication/nodejs/token.js`) kimenetével bájtra egyeznek (egyszer,
 kézzel ellenőrizve; a Bunny kódját nem vettük át). A `verify` esetek `expected` mezője: `status` (`200` = elfogadva,
@@ -37,5 +37,5 @@ kézzel ellenőrizve; a Bunny kódját nem vettük át). A `verify` esetek `expe
 A kulcsok **csak teszt** kulcsok.
 
 ```
-pnpm --filter @workspace/media-token test
+pnpm --filter @cry/media-sdk test
 ```

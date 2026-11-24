@@ -52,7 +52,7 @@ function lookupFor(c: { app: string; kid: string; key: string; kind: 'browser' |
   return appLookupFrom({ [c.app]: c.kind === 'browser' ? { keys: m, contentKeys: {} } : { keys: {}, contentKeys: m } });
 }
 
-describe('media-token property', () => {
+describe('media-sdk property', () => {
   it('verify(sign(x)) = ok tetszőleges érvényes bemenetre, a lejáratig', () => {
     fc.assert(
       fc.property(anyCase, fc.nat(), (c, back) => {

@@ -1,7 +1,8 @@
 {
-  "name": "@workspace/media-token",
-  "version": "0.0.0",
+  "name": "@cry/media-sdk",
+  "version": "0.1.0",
   "private": true,
+  "license": "UNLICENSED",
   "type": "module",
   "main": "./dist/index.cjs",
   "module": "./dist/index.js",
@@ -21,17 +22,18 @@
   },
   "files": [
     "dist",
-    "test-vectors.json"
+    "test-vectors.json",
+    "CHANGELOG.md"
   ],
   "scripts": {
     "build": "tsup",
     "dev": "tsup --watch",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "lint": "oxlint --type-aware src/"
+    "lint": "oxlint --type-aware src/",
+    "check:standalone": "bash scripts/check-standalone.sh"
   },
   "devDependencies": {
-    "@workspace/tsconfig": "workspace:*",
     "@types/node": "^24.0.0",
     "fast-check": "^4.10.2",
     "oxlint": "^1.58.0",

@@ -4,14 +4,14 @@ Védett médiaszerver: a hivatalos `nginx` image (tag + digest rögzítve, njs 1
 Bunny V2 directory-tokent (`kid`, `u` kiegészítéssel) ellenőrzi, és az nginx statikus motorjával szolgál ki
 (Range, ETag, sendfile). Tervek: a terv 4.1–4.4, 7.2–7.3,
 az implementációs terv WP2–WP4.
-Ügyfél-appból nem importál; a CLI-k és a tesztek a `@workspace/media-token`-t használják.
+Ügyfél-appból nem importál; a CLI-k és a tesztek a `@cry/media-sdk`-t használják.
 
 ```
 compose.yaml              egy szolgáltatás (media), read_only, 127.0.0.1:10090, rögzített alhálózat (real_ip)
 nginx/nginx.conf          njs-modul, types-tábla, real_ip, js_preload_object apps
 nginx/media.conf          js_set változók, CORS / CORP / Cache-Control, limit_*, JSON-napló (token nélkül), /healthz
 nginx/templates/          realip.conf.template (az image envsubst-je: set_real_ip_from ${NET_GATEWAY})
-njs/media.js              token-ellenőrzés (= media-token verifySignedPath: status ÉS reason), js_set-kimenetek
+njs/media.js              token-ellenőrzés (= media-sdk verifySignedPath: status ÉS reason), js_set-kimenetek
 njs/check-apps.js         az apps.json tartalmi ellenőrzése a konténerben (njs CLI)
 scripts/keys-new.ts       kulcsgenerálás
 scripts/sign.ts           próbalink aláírása

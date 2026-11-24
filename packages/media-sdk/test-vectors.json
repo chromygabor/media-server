@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "comment": "A @workspace/media-token és a médiaszerver njs-ellenőrzésének közös vektorai (terv 4.1–4.4). A kulcsok CSAK TESZT kulcsok. Idők: unix-másodperc. A verify expected.status 200 = elfogadva.",
+  "comment": "A @cry/media-sdk és a médiaszerver njs-ellenőrzésének közös vektorai (terv 4.1–4.4). A kulcsok CSAK TESZT kulcsok. Idők: unix-másodperc. A verify expected.status 200 = elfogadva.",
   "sign": [
     {
       "name": "könyvtár-token u-val (Bunny hivatalos Node-példa)",

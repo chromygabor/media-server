@@ -1,6 +1,21 @@
 {
-  "extends": "@workspace/tsconfig/library.json",
+  "$schema": "https://json.schemastore.org/tsconfig",
+  // Önálló (extends nélkül): a monorepó `@workspace/tsconfig/library.json` (+ `base.json`) beállításainak kifejtett
+  // másolata, hogy a csomag a repóból kiemelhető legyen. Ha a repó beállításai változnak, ezt is igazítani kell.
   "compilerOptions": {
+    "target": "ES2023",
+    "lib": ["ES2023"],
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "declaration": true,
+    "sourceMap": true,
+    "noEmit": true,
     // A HMAC a `node:crypto`-ból jön (futásidejű függőség nincs).
     "types": ["node"]
   },

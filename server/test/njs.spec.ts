@@ -1,12 +1,12 @@
 // Az njs/media.js Node alatt (implementációs terv WP2 7.): a közös vektorokon ugyanazt a status-t ÉS reason-t
-// adja, mint a TS (`@workspace/media-token`), véletlen módosításokon is; az apps.json betöltéskori ellenőrzése;
+// adja, mint a TS (`@cry/media-sdk`), véletlen módosításokon is; az apps.json betöltéskori ellenőrzése;
 // a js_set kimenetek egy r-csonkkal.
 
 import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import fc from 'fast-check';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { appLookupFrom, buildSignedPath, verifySignedPath, type AppKeys, type VerifyResult } from '@workspace/media-token';
+import { appLookupFrom, buildSignedPath, verifySignedPath, type AppKeys, type VerifyResult } from '@cry/media-sdk';
 import media, { type AppConfig, type NjsRequest } from '../njs/media.js';
 
 interface VerifyVector {
@@ -27,7 +27,7 @@ interface SignVector {
 }
 
 const require = createRequire(import.meta.url);
-const vectors = JSON.parse(readFileSync(require.resolve('@workspace/media-token/test-vectors.json'), 'utf8')) as {
+const vectors = JSON.parse(readFileSync(require.resolve('@cry/media-sdk/test-vectors.json'), 'utf8')) as {
   version: number;
   sign: SignVector[];
   verify: VerifyVector[];

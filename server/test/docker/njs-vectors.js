@@ -1,4 +1,4 @@
-// A közös vektorok (@workspace/media-token/test-vectors.json) a konténer njs CLI-jén (implementációs terv WP3,
+// A közös vektorok (@cry/media-sdk/test-vectors.json) a konténer njs CLI-jén (implementációs terv WP3,
 // kockázatok: „a WP3 ugyanazokat a vektorokat a konténeren is lefuttatja”). njs 1.0.2-részhalmaz, mindkét motorral:
 //
 //   njs [-n QuickJS] -q -m -p /etc/nginx/njs <ez a fájl> <vectors.json>

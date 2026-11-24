@@ -9,7 +9,7 @@ import { request as httpRequest, type IncomingHttpHeaders, type IncomingMessage 
 import { createRequire } from 'node:module';
 import { join } from 'node:path';
 import { gunzipSync } from 'node:zlib';
-import { buildSignedPath, bucketExpires, signToken } from '@workspace/media-token';
+import { buildSignedPath, bucketExpires, signToken } from '@cry/media-sdk';
 import { describe, expect, inject, it } from 'vitest';
 import { APP_DIR, BLOB_SIZE, CONTENT_JSON, FILES, seededBytes, type DockerEnv } from './setup.js';
 
@@ -54,7 +54,7 @@ function seg(o: SegOpts): string {
   return `/bcdn_token=${token}&kid=${kid}&token_path=${encodeURIComponent(o.tokenPath)}${u ? `&u=${u}` : ''}&expires=${expires}`;
 }
 
-/** Elfogadható link a media-token buildSignedPath-jával (böngészős: a fájl könyvtára). */
+/** Elfogadható link a media-sdk buildSignedPath-jával (böngészős: a fájl könyvtára). */
 function signed(path: string, o: Partial<SegOpts> = {}): string {
   const u = o.u === null ? undefined : (o.u ?? USER);
   return buildSignedPath({
@@ -203,7 +203,7 @@ if (!ready) {
 
     it.each(['njs', 'QuickJS'])('a közös vektorok a konténer njs CLI-jén (%s motor)', async (engine) => {
       const require = createRequire(import.meta.url);
-      const vectors = readFileSync(require.resolve('@workspace/media-token/test-vectors.json'), 'utf8');
+      const vectors = readFileSync(require.resolve('@cry/media-sdk/test-vectors.json'), 'utf8');
       const runner = readFileSync(join(APP_DIR, 'test/docker/njs-vectors.js'), 'utf8');
       expect((await exec(['sh', '-c', 'cat > /tmp/vectors.json'], vectors)).code).toBe(0);
       expect((await exec(['sh', '-c', 'cat > /tmp/njs-vectors.js'], runner)).code).toBe(0);

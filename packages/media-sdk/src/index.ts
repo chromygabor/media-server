@@ -1,5 +1,5 @@
 // A médiaszerver tokenje (terv 4.1–4.4; implementációs terv WP1).
-// Tiszta TS, futásidejű függőség nélkül (`node:crypto`); a közös vektorok: `@workspace/media-token/test-vectors.json`.
+// Tiszta TS, futásidejű függőség nélkül (`node:crypto`); a közös vektorok: `@cry/media-sdk/test-vectors.json`.
 
 export {
   appLookupFrom,

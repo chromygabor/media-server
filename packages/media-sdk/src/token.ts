@@ -115,14 +115,14 @@ export function timingSafeEqualStr(a: string, b: string): boolean {
 }
 
 function assertSignInput(key: string, tokenPath: string, expires: number, params: TokenParams): void {
-  if (typeof key !== 'string' || key === '') throw new RangeError('media-token: üres kulcs');
-  if (typeof tokenPath !== 'string' || tokenPath === '') throw new RangeError('media-token: üres token_path');
+  if (typeof key !== 'string' || key === '') throw new RangeError('media-sdk: üres kulcs');
+  if (typeof tokenPath !== 'string' || tokenPath === '') throw new RangeError('media-sdk: üres token_path');
   if (!Number.isSafeInteger(expires) || !EXPIRES_RE.test(String(expires))) {
-    throw new RangeError(`media-token: érvénytelen expires: ${expires}`);
+    throw new RangeError(`media-sdk: érvénytelen expires: ${expires}`);
   }
-  if (!ID_RE.test(params.kid)) throw new RangeError(`media-token: érvénytelen kid: ${JSON.stringify(params.kid)}`);
+  if (!ID_RE.test(params.kid)) throw new RangeError(`media-sdk: érvénytelen kid: ${JSON.stringify(params.kid)}`);
   if (params.u !== undefined && !ID_RE.test(params.u)) {
-    throw new RangeError(`media-token: érvénytelen u: ${JSON.stringify(params.u)}`);
+    throw new RangeError(`media-sdk: érvénytelen u: ${JSON.stringify(params.u)}`);
   }
 }
 
@@ -160,9 +160,9 @@ export function buildSignedPath(input: BuildSignedPathInput): string {
   const params: TokenParams = u === undefined ? { kid } : { kid, u };
   assertSignInput(key, tokenPath, expires, params);
   const info = classifyMediaPath(path);
-  if (!info) throw new RangeError(`media-token: nem kiszolgálható útvonal: ${JSON.stringify(path)}`);
+  if (!info) throw new RangeError(`media-sdk: nem kiszolgálható útvonal: ${JSON.stringify(path)}`);
   const problem = tokenPathProblem(tokenPath, path, info.app, info.kind, u);
-  if (problem) throw new RangeError(`media-token: hibás token_path (${problem}): ${JSON.stringify(tokenPath)}`);
+  if (problem) throw new RangeError(`media-sdk: hibás token_path (${problem}): ${JSON.stringify(tokenPath)}`);
   const token = computeToken(key, tokenPath, String(expires), params);
   const urlData = sortedParams(tokenPath, params)
     .map(([k, v]) => `${k}=${encodeURIComponent(v)}`)

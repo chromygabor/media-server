@@ -3,7 +3,7 @@
 // rögzített image; a napló nem tartalmazhat tokent.
 
 import { readFileSync } from 'node:fs';
-import { MEDIA_CONTENT_TYPES as TOKEN_TYPES, CONTENT_FILE_TYPE } from '@workspace/media-token';
+import { MEDIA_CONTENT_TYPES as TOKEN_TYPES, CONTENT_FILE_TYPE } from '@cry/media-sdk';
 import { describe, expect, it } from 'vitest';
 import media from '../njs/media.js';
 
@@ -22,7 +22,7 @@ const nginxConf = read('nginx/nginx.conf');
 const mediaConf = read('nginx/media.conf');
 
 describe('kiterjesztés-tábla', () => {
-  it('njs = media-token = a backend másolata', () => {
+  it('njs = media-sdk = a backend másolata', () => {
     expect(media.MEDIA_CONTENT_TYPES).toEqual(BACKEND_MEDIA_CONTENT_TYPES);
     expect(TOKEN_TYPES).toEqual(BACKEND_MEDIA_CONTENT_TYPES);
   });
