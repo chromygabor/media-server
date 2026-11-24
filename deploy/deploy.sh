@@ -12,8 +12,8 @@
 # compose.yaml-ra (a régi compose.yaml.prev néven marad); 6. a szerveren az ÚJ image-dzsel és a mostani apps.json-nal,
 # eldobható konténerben: compose config, check-apps.js, nginx -t (a futó konténer közben fut); 7. váltás: a .env
 # IMAGE_TAG-je az új, a PREVIOUS_IMAGE_TAG a régi címke (atomikusan; a .env egyetlen írása), up -d --wait, /healthz;
-# hibánál a .env és a konténer vissza a régi címkére; 8. a régi image-ek takarítása (a mostani, az előző és a
-# legújabb N marad; --keep N, alap 3, N >= 2).
+# hibánál a .env és a konténer vissza a régi címkére; 8. csak --keep N-nel (N >= 2): a régi media-server:<verzió>-<SHA>
+# image-ek takarítása (a mostani, az előző és a legújabb N marad; egy hoszton egy telepítést feltételez).
 # --rollback: check-apps.js + nginx -t az előző image-dzsel, majd a két címke cseréje, up -d --wait, /healthz.
 # --reload-config: check-apps.js + nginx -t a futó címkével, up -d --wait, majd ha az apps.json inode-ja változott
 # (atomikus csere) restart, különben nginx -s reload; /healthz. A kulcsforgatás rutinlépése.
@@ -38,7 +38,7 @@ usage() {
 MODE=deploy
 DRY_RUN=0
 ALLOW_DIRTY=0
-KEEP=3
+KEEP=""
 set_mode() {
   if [[ "$MODE" != deploy ]]; then
     echo "deploy: a --rollback és a --reload-config kizárja egymást" >&2
@@ -72,12 +72,12 @@ while [[ $# -gt 0 ]]; do
   esac
   shift
 done
-[[ "$KEEP" =~ ^[0-9]+$ ]] && ((KEEP >= 2)) || {
+[[ -z "$KEEP" ]] || { [[ "$KEEP" =~ ^[0-9]+$ ]] && ((KEEP >= 2)); } || {
   echo "deploy: a --keep legalább 2 legyen ($KEEP)" >&2
   exit 2
 }
-if [[ "$MODE" != deploy ]] && ((ALLOW_DIRTY)); then
-  echo "deploy: az --allow-dirty csak deploynál értelmes (ott van építés)" >&2
+if [[ "$MODE" != deploy ]] && { ((ALLOW_DIRTY)) || [[ -n "$KEEP" ]]; }; then
+  echo "deploy: az --allow-dirty és a --keep csak deploynál értelmes" >&2
   exit 2
 fi
 
@@ -458,7 +458,7 @@ if ((DRY_RUN)); then
     .env: IMAGE_TAG=$TAG, PREVIOUS_IMAGE_TAG=${cur:-(üres)}$same_note
     docker compose up -d --wait        # ha a konténer marad: restart (új inode) vagy nginx -s reload
     curl http://<docker compose port media 80>/healthz   # 204; hibánál vissza a(z) ${cur:-régi} címkére
-    takarítás: a media-server:* közül a mostani, az előző és a legújabb $KEEP marad
+    $([[ -n "$KEEP" ]] && echo "takarítás: a media-server:* közül a mostani, az előző és a legújabb $KEEP marad" || echo "takarítás nincs (--keep N nélkül)")
 EOF
   exit 0
 fi
@@ -473,6 +473,8 @@ else
   prev_after=$cur
 fi
 remote switch "$DEPLOY_DIR" "$TAG" "$old_compose_inode"
-step "régi image-ek takarítása (marad: a mostani, az előző és a legújabb $KEEP)"
-remote prune "$DEPLOY_DIR" "$KEEP" || echo "deploy: FIGYELEM: a takarítás nem sikerült (a deploy rendben)" >&2
+if [[ -n "$KEEP" ]]; then
+  step "régi image-ek takarítása (marad: a mostani, az előző és a legújabb $KEEP)"
+  remote prune "$DEPLOY_DIR" "$KEEP" || echo "deploy: FIGYELEM: a takarítás nem sikerült (a deploy rendben)" >&2
+fi
 step "kész: $WHERE fut: $IMAGE (előző: ${prev_after:-nincs})"

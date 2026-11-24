@@ -124,6 +124,7 @@ describe('deploy.sh (WP49)', () => {
     expect(run(['--rollback', '--reload-config']).status).toBe(2);
     expect(run(['--keep', '1']).status).toBe(2);
     expect(run(['--rollback', '--allow-dirty']).status).toBe(2);
+    expect(run(['--reload-config', '--keep', '3']).status).toBe(2);
     const root = run(['--rollback'], { DEPLOY_DIR: '/' });
     expect(root.status).toBe(1);
     expect(root.stderr).toMatch(/DEPLOY_DIR/);
