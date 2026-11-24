@@ -23,6 +23,7 @@
   "files": [
     "dist",
     "test-vectors.json",
+    "SPEC.md",
     "CHANGELOG.md"
   ],
   "scripts": {
