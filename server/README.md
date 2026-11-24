@@ -75,13 +75,16 @@ A szerver a saját, generált szintetikus mintamédiájával fut (ügyfél-tanan
 docker + `docker compose`, ffmpeg; a repó gyökerében egyszer `pnpm install` és `pnpm build` (a `keys`/`sign` a
 csomag lefordított parancsait hívja).
 
+A `pnpm` parancsok a repó gyökeréből, a `docker compose` a `server/`-ből fut. Az `apps.local.json` a `docker compose up`
+előtt kell: hiányában a docker egy root tulajdonú könyvtárat hoz létre a helyén.
+
 ```
 pnpm dev-media                             # server/dev-media/: 1 perces MP4, M4A, JPG, _content/, a `demo` és a `proba` app (gitignore-olt)
+cp server/.env.example server/.env         # MEDIA_ROOT=./dev-media (csak olvasva), APPS_JSON=./secrets/apps.local.json
+pnpm keys demo --kid dev1 --write secrets/apps.local.json >/dev/null   # az útvonal a server/-hez képest; a stdout a kulcsot is kiírja
 cd server
-cp .env.example .env                       # MEDIA_ROOT=./dev-media (csak olvasva), APPS_JSON=./secrets/apps.local.json
-pnpm keys demo --kid dev1 --write secrets/apps.local.json
 docker compose up -d --wait                # http://127.0.0.1:10090/healthz → 204
-pnpm --silent sign demo proba-tema/lessons/ch-01-l01/m01.720p.mp4      # --u <uuid>, --content, --ttl=<mp>, --prefix, --kid, --base
+pnpm -w --silent sign demo proba-tema/lessons/ch-01-l01/m01.720p.mp4   # --u <uuid>, --content, --ttl=<mp>, --prefix, --kid, --base
 docker compose exec -T media nginx -c /etc/nginx/media/nginx.conf -t           # a konfig a -c-vel érhető el
 docker compose exec -T media nginx -c /etc/nginx/media/nginx.conf -s reload
 docker compose logs -f media               # JSON-napló, token nélkül
