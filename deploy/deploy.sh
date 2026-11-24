@@ -362,7 +362,9 @@ if [[ "$MODE" == deploy ]]; then
   IMAGE=$(bash "$SERVER_DIR/scripts/image-build.sh" "${build_args[@]}" | tail -n 1) || exit 1
   [[ "$IMAGE" == media-server:* ]] || die "váratlan image-név: $IMAGE"
   TAG=${IMAGE#media-server:}
-  IMAGE_FP=$(docker image inspect --format '{{index .Config.Labels "org.opencontainers.image.revision"}} {{range .RootFS.Layers}}{{.}} {{end}}' "$IMAGE" | sha256sum | cut -d' ' -f1)
+  # Ugyanaz a számítás, mint a szerveroldali fingerprint() (a $(…) a záró újsort levágja).
+  fp_src=$(docker image inspect --format '{{index .Config.Labels "org.opencontainers.image.revision"}} {{range .RootFS.Layers}}{{.}} {{end}}' "$IMAGE")
+  IMAGE_FP=$(printf '%s' "$fp_src" | sha256sum | cut -d' ' -f1)
   echo "    $IMAGE ($(docker image inspect --format '{{.Id}}' "$IMAGE"))"
   echo "    revision: $(docker image inspect --format '{{index .Config.Labels "org.opencontainers.image.revision"}}' "$IMAGE")"
 
