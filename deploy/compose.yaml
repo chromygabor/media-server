@@ -1,0 +1,50 @@
+# A médiaszerver szerveres telepítése (kiemelési terv WP49; terv 7.3). A deploy.sh másolja a DEPLOY_DIR-be
+# (/srv/media-server/compose.yaml); a .env, a secrets/ és a data/ a szerveren marad.
+# Az image a helyben épített és tesztelt media-server:<verzió>-<SHA> (docker save | ssh docker load, regisztry
+# nélkül); a címkét a .env IMAGE_TAG-je adja, ezt a deploy.sh állítja (az előzőt a PREVIOUS_IMAGE_TAG őrzi).
+# A keményítés ugyanaz, mint a server/compose.yaml-é (a server/test/deploy.spec.ts ellenőrzi).
+#
+#   docker compose ps
+#   docker compose exec -T media nginx -c /etc/nginx/media/nginx.conf -t
+
+name: ${COMPOSE_PROJECT_NAME:-media-server}
+
+services:
+  media:
+    image: media-server:${IMAGE_TAG:?IMAGE_TAG kell (.env; a deploy.sh írja)}
+    pull_policy: never
+    environment:
+      NET_GATEWAY: ${NET_GATEWAY:-172.29.90.1}
+    read_only: true
+    tmpfs:
+      - /etc/nginx/conf.d
+      - /var/cache/nginx
+      - /run
+      - /tmp
+    ports:
+      - "${BIND:-127.0.0.1}:${PORT:-10090}:80"
+    volumes:
+      - ${APPS_JSON:?APPS_JSON kell (.env)}:/etc/nginx/secrets/apps.json:ro
+      - ${MEDIA_ROOT:?MEDIA_ROOT kell (.env)}:/srv/media:ro
+    networks:
+      - media
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: 50m
+        max-file: "5"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1/healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+
+networks:
+  media:
+    # Rögzített alhálózat: a portkiadás a kapcsolatot az átjáróról adja, a real_ip csak azt bízza meg (P4).
+    ipam:
+      config:
+        - subnet: ${NET_SUBNET:-172.29.90.0/24}
+          gateway: ${NET_GATEWAY:-172.29.90.1}
