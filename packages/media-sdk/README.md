@@ -6,8 +6,8 @@ A védett médiaszerver (`server`) kliensoldala: aláírt URL (Bunny V2 director
 
 - **A protokoll normatív leírása: [`SPEC.md`](SPEC.md)** (URL-alak, token, státuszkódok, fejlécek, `apps.json`,
   kulcsforgatás, feltöltés, ajánlott env-nevek). Az indoklás: a terv 4.
-- Fogyasztók a monorepóban: a backend (URL-aláíró, tartalomforrás), a frontend e2e és a
-  médiaszerver tesztjei; a gyökér `pnpm media-server:keys` / `:sign` a csomag parancsait hívja.
+- Fogyasztók a monorepóban: a backend (URL-aláíró, tartalomforrás, a tesztjei a
+  `./testing`-gel), a frontend e2e (`./testing`) és a médiaszerver tesztjei; a gyökér `pnpm media-server:keys` / `:sign` a csomag parancsait hívja.
 
 ```
 /bcdn_token=HS256-<sig>&kid=<kid>&token_path=<kódolt előtag>[&u=<uuid>]&expires=<unix>/<app>/<assetKey>
@@ -48,9 +48,23 @@ sig = Base64URL(HMAC-SHA256(kulcs, token_path + expires + "kid=…&token_path=�
    const content = signer.signContentFile('2026.11.23-1');   // { url, expiresAt } vagy { error }
    ```
 
-4. **Teszt** *(WP35 után)*: `startFakeMediaServer(…)` a `@chromygabor/media-sdk/testing`-ből. Addig: a backend hamis szervere
-   (a fogyasztó backend tesztjeiben) mintának, vagy `verifySignedPath` + `appLookupFrom` közvetlenül;
-   a valódi szerver docker-tesztje: `pnpm media-server:test`.
+4. **Teszt**: `startFakeMediaServer(…)` és `testKeys` a `@chromygabor/media-sdk/testing`-ből. A hamis szerver a valódi
+   szabályaival dönt (ellenőrzési sorrend és státuszkódok, kiterjesztés-tábla, `Range`, CORS, a SPEC 5. fejlécei), a
+   fájlt a `<root>/<dir>/<assetKey>`-ből adja; a `testKeys` a közös tesztvektorok CSAK TESZT kulcsai egy kész
+   `apps.json`-nal. Korlátok (`429`, `503`) és napló nincs benne: azt a valódi szerver docker-tesztje fedi
+   (`pnpm media-server:test`).
+
+   ```ts
+   import { createUrlSigner } from '@chromygabor/media-sdk';
+   import { startFakeMediaServer, testKeys } from '@chromygabor/media-sdk/testing';
+
+   const fake = await startFakeMediaServer({ apps: testKeys.apps, root });   // a fájl: <root>/<assetKey> (dir: '.')
+   const signer = createUrlSigner({ ...testKeys, baseUrl: fake.url, maxTtlSeconds: 3600 });
+   // … a tesztelt kód a signer linkjeit kéri le …
+   expect(fake.requests.map((r) => r.status)).toEqual([200]);
+   fake.override = { status: 500 };        // vagy { delayMs }, { body, headers }, { truncateAt }, vagy egy (async) függvény
+   await fake.close();
+   ```
 
 ## Felület
 
@@ -78,6 +92,17 @@ sig = Base64URL(HMAC-SHA256(kulcs, token_path + expires + "kid=…&token_path=�
 | `generateKey()` | új kulcs: 32 véletlen bájt base64url-szövege (43 jel) |
 | `defaultKid(content, now?)` | alap `kid`: `<év>a` / `<év>c` |
 | `addKey(apps, { app, kid, key, content, dir? })` | kulcs hozzáadása (új objektum; új app `dir` = app-név, `origins: []`, `corp: same-site`); meglévő `kid`-re hiba |
+
+`@chromygabor/media-sdk/testing` (csak tesztkódból):
+
+| Függvény / típus | Mit csinál |
+| --- | --- |
+| `startFakeMediaServer({ apps, root, now?, port?, host?, routes? })` | hamis médiaszerver (`node:http`) a SPEC szabályaival; a fájl `<root>/<dir>/<assetKey>`. Visszaad: `{ url, requests, override, close() }`. Hibás `apps` mellett minden médiakérés `403 apps-invalid`; `/healthz` → `204`, `OPTIONS` → `204`, más metódus `405` |
+| `FakeMediaServer.requests` | a kérések naplója (`method`, `uri`, `path` token nélkül, `expires`, `range`, `origin`, `verify`, `status`) |
+| `FakeMediaServer.override` | eltérés a szabályos választól: `{ status?, delayMs?, body?, headers?, truncateAt? }`, vagy egy kérésenként hívott (async) függvény – amíg ez vár, a kérés is; a token utána, a pillanatnyi órával dől el |
+| `now` / `routes` | az óra (Unix-ezredmásodperc, mint a `createUrlSigner`-nél) és saját végpontok (pl. egy másik folyamatból hívható vezérlő) |
+| `testKeys` | CSAK TESZT: `{ app: 'test-app', kid, key, contentKid, contentKey, apps }` a közös tesztvektorokból; a `createUrlSigner`-nek szétteríthető |
+| `testAppsFile({ app?, dir?, origins?, corp? })` | ugyanezekkel a kulcsokkal más app-névre, `dir`-re, `origins`-re, `corp`-ra (alapból `dir: '.'`) |
 
 Parancsok (`bin`): `media-keys` és `media-sign` (`--help`). Az `apps.json` útvonalát argumentumként kapják
 (`--write`, illetve a kötelező `--apps`), alapértelmezett útvonal nincs. A hibás JSON-ú fájl hibaüzenete a fájl

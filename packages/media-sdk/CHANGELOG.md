@@ -11,6 +11,14 @@ változatlansága a `test-vectors.json` vektoraival ellenőrzött; ennek megtör
   hatókört a repó tulajdonosához köti). A könyvtár marad `packages/media-sdk`; a felület és a vektorok változatlanok.
 
 ### Új
+- `./testing` alútvonal (`src/testing/`; csomagterv WP35): `startFakeMediaServer({ apps, root,
+  now?, port?, host?, routes? })` – hamis médiaszerver `node:http`-n a SPEC szabályaival (ellenőrzési sorrend és
+  státuszkódok, kiterjesztés-tábla, `<root>/<dir>/<assetKey>`, `Range` → `206`/`416`, `HEAD`, `ETag`/`304`,
+  `If-Range`, CORS az `origins`-ből, CORP, `Cache-Control`, `/healthz`, `OPTIONS`, `405`, hibás `apps.json` →
+  `403 apps-invalid`), a `requests` naplóval és az `override`-dal (státusz, késleltetés, törzs, fejléc, rövidített
+  `206`; függvényként kérésenként, aszinkron is); `testKeys` és `testAppsFile()` – a közös tesztvektorok CSAK TESZT
+  kulcsai egy kész `apps.json`-nal. Konformanciateszt: a `verify` vektorok HTTP-státusza azonos a valódi szerverével.
+  A backend és a frontend e2e saját hamis szervere erre épül.
 - `./apps-config` alútvonal (`src/apps-config.ts`; csomagterv WP33): az `apps.json` típusai
   (`AppEntry`, `AppsFile`, `AppCorp`, `APP_CORP_VALUES`), `validateAppsFile()` a médiaszerver njs `validateApps`
   szabályaival (`{ ok: true, apps } | { ok: false, errors }`; az elfogadás és a hibák száma azonos, a hibaüzenet

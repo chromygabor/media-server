@@ -1,9 +1,9 @@
 import { defineConfig } from 'tsup';
 
 export default defineConfig([
-  // A könyvtár: `.` és `./apps-config`, ESM + CJS, típusokkal.
+  // A könyvtár: `.`, `./apps-config` és `./testing`, ESM + CJS, típusokkal.
   {
-    entry: { index: 'src/index.ts', 'apps-config': 'src/apps-config.ts' },
+    entry: { index: 'src/index.ts', 'apps-config': 'src/apps-config.ts', testing: 'src/testing/index.ts' },
     format: ['cjs', 'esm'],
     dts: true,
     clean: true,

@@ -1,6 +1,7 @@
 # A védett médiaszerver protokollja (SPEC)
 
-Ez a leírás **normatív**: a médiaszerver (`server`: nginx + njs) és a `@chromygabor/media-sdk` ennek felel meg.
+Ez a leírás **normatív**: a médiaszerver (`server`: nginx + njs) és a `@chromygabor/media-sdk` ennek felel meg,
+annak `./testing` hamis szervere is (a korlátok – 5. pont – és a napló nélkül).
 A döntések indoklása a tervekben van (a terv 4. és 7.1);
 ha a terv és ez a leírás eltér, ez az irányadó. A kulcsszavak: **kell** / **nem szabad** (kötelező), **ajánlott**.
 
@@ -8,7 +9,7 @@ Minden állítás mögött zárójelben a teszt, amely fedi (a kiemelésig a mon
 
 | Jel | Teszt |
 | --- | --- |
-| **V** | `test-vectors.json` közös vektorai: a TS (`src/vectors.spec.ts`), az njs Node alatt (`server/test/njs.spec.ts`) és az njs a konténer CLI-jén, `njs` és `QuickJS` motorral (`media.docker.spec.ts` „a közös vektorok…”); a `verify` vektoroknál a `status` és a `reason` is egyezik |
+| **V** | `test-vectors.json` közös vektorai: a TS (`src/vectors.spec.ts`), az njs Node alatt (`server/test/njs.spec.ts`), az njs a konténer CLI-jén, `njs` és `QuickJS` motorral (`media.docker.spec.ts` „a közös vektorok…”), és a `./testing` hamis szervere HTTP-n (`src/testing/fake-server.spec.ts` „konformancia”); a `verify` vektoroknál a `status` és a `reason` is egyezik |
 | **T** | a csomag saját tesztjei: `src/token.spec.ts`, `src/path.spec.ts`, `src/expires.spec.ts`, `src/token.property.spec.ts` |
 | **N** | `server/test/njs.spec.ts` (njs Node alatt: TS-paritás fast-checkkel, `validateApps`, js_set-kimenetek, fejlécszűrő) |
 | **C** | `server/test/config.spec.ts` (konfigfájlok összhangja) |

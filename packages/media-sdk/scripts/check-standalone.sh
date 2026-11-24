@@ -10,7 +10,8 @@
 # 2. Build, majd `pnpm pack` egy ideiglenes könyvtárba (mktemp -d; a végén törlődik).
 # 3. Ott egy üres projekt, `npm install <tarball>`.
 # 4. Egy ESM és egy CJS próba: minden alútvonal (SUBPATHS) betölthető, és a `test-vectors.json` első `sign` vektora
-#    bájtra reprodukálható (`signToken`, `buildSignedPath`).
+#    bájtra reprodukálható (`signToken`, `buildSignedPath`); az ESM-próba a `./testing` hamis szerverét is elindítja,
+#    és egy `testKeys`-szel aláírt linket kér le (WP35).
 # 5. Minden `bin` (BINS) `--help`-je 0-val lép ki.
 #
 # Bővítés: új alútvonalnál a SUBPATHS, új parancsnál a BINS listába kell felvenni (a package.json `exports` / `bin`
@@ -23,6 +24,7 @@ set -euo pipefail
 SUBPATHS=(
   "."
   "./apps-config"
+  "./testing"
   "./test-vectors.json"
 )
 # A `bin` mező parancsai.
@@ -160,6 +162,23 @@ const path = buildSignedPath({ key: v.key, kid: v.params.kid, u: v.params.u, tok
 if (token !== v.expectedToken) throw new Error(`ESM: a token eltér (${v.name})`);
 if (path !== v.expectedUrlPath) throw new Error(`ESM: az URL-útvonal eltér (${v.name})`);
 console.log(`  ✓ ESM: ${subpaths.length} alútvonal, a(z) „${v.name}” vektor bájtra egyezik`);
+
+// A `./testing`: a hamis szerver a tarballból indul, és a `testKeys`-szel aláírt linket kiszolgálja (WP35). A
+// médiagyökér a próbakönyvtárban van (az egész ideiglenes könyvtárral együtt törlődik).
+const { mkdirSync, writeFileSync } = await import('node:fs');
+mkdirSync('media-root/l', { recursive: true });
+writeFileSync('media-root/l/v.mp4', 'video');
+const { startFakeMediaServer, testKeys } = loaded['./testing'];
+const fake = await startFakeMediaServer({ apps: testKeys.apps, root: 'media-root' });
+try {
+  const signer = loaded['.'].createUrlSigner({ ...testKeys, baseUrl: fake.url, maxTtlSeconds: 60 });
+  const [r] = signer.signDirectory({ scopeDir: 'l/', userId: 'u', assets: [{ assetKey: 'l/v.mp4' }] }).results;
+  const res = await fetch(r.url);
+  if (res.status !== 200 || (await res.text()) !== 'video') throw new Error(`ESM: a hamis szerver nem adta a fájlt (${res.status})`);
+} finally {
+  await fake.close();
+}
+console.log('  ✓ ESM: ./testing – a hamis szerver a testKeys-szel aláírt linket kiszolgálja');
 EOF
 
 cat > probe.cjs <<'EOF'
