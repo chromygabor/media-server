@@ -1,6 +1,18 @@
 {
-  "extends": "@workspace/tsconfig/base.json",
+  "$schema": "https://json.schemastore.org/tsconfig",
+  // Önálló (extends nélkül): a monorepó `@workspace/tsconfig/base.json` beállításainak kifejtett másolata, hogy a
+  // szerver a repóból kiemelhető legyen (kiemelési terv WP40).
   "compilerOptions": {
+    "target": "ES2023",
+    "lib": ["ES2023"],
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "declaration": true,
+    "sourceMap": true,
     "module": "nodenext",
     "moduleResolution": "nodenext",
     "noEmit": true,

@@ -3,7 +3,15 @@
   "version": "0.1.0",
   "private": true,
   "license": "UNLICENSED",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/chromygabor/media-server.git",
+    "directory": "packages/media-sdk"
+  },
   "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
   "main": "./dist/index.cjs",
   "module": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -49,6 +57,7 @@
     "bin",
     "test-vectors.json",
     "SPEC.md",
+    "README.md",
     "CHANGELOG.md"
   ],
   "scripts": {
