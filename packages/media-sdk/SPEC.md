@@ -2,10 +2,9 @@
 
 Ez a leírás **normatív**: a médiaszerver (`server`: nginx + njs) és a `@chromygabor/media-sdk` ennek felel meg,
 annak `./testing` hamis szervere is (a korlátok – 5. pont – és a napló nélkül).
-A döntések indoklása a tervekben van (a terv 4. és 7.1);
-ha a terv és ez a leírás eltér, ez az irányadó. A kulcsszavak: **kell** / **nem szabad** (kötelező), **ajánlott**.
+A tervezési előzmények nem részei a repónak; ha bármely más leírás ettől eltér, ez az irányadó. A kulcsszavak: **kell** / **nem szabad** (kötelező), **ajánlott**.
 
-Minden állítás mögött zárójelben a teszt, amely fedi (a kiemelésig a monorepó útvonalaival):
+Minden állítás mögött zárójelben a teszt, amely fedi (a csomagon belül a `src/`-hez, a szerveré a repó gyökeréhez képest):
 
 | Jel | Teszt |
 | --- | --- |
@@ -15,7 +14,7 @@ Minden állítás mögött zárójelben a teszt, amely fedi (a kiemelésig a mon
 | **C** | `server/test/config.spec.ts` (konfigfájlok összhangja) |
 | **D** | `server/test/docker/media.docker.spec.ts` (a futó konténer HTTP-n) |
 | **K** | `src/cli/cli.spec.ts` (a `media-keys` / `media-sign` parancs: kulcsgenerálás, próbalink) és `src/apps-config.spec.ts` (`validateAppsFile`) |
-| **P** | a fogyasztó feltöltő eszközének tesztjei |
+| **P** | a referencia-feltöltő tesztjei (egy fogyasztó app repójában; ez a repó nem tartalmazza) |
 
 Az `es256` blokk vektorait (ES256 séma) ma a TS futtatja (`src/vectors.spec.ts`); az njs, a konténer CLI-je és a hamis
 szerver a séma szerveroldali és `./testing`-beli bekötésével veszi át őket.
@@ -241,8 +240,8 @@ alatt”, „közös dir…”: két app egy `dir`-en, a CORP és a CORS appenk�
 validateAppsFile”, ebben a közös `dir` is.) A csomag a szabályokat a `@chromygabor/media-sdk/apps-config`
 `validateAppsFile()`-jával adja (az elfogadás és a hibák száma az njs-ével azonos).
 
-- Kulcs generálása: 32 véletlen bájt base64url-szövege (43 jel). (K: „media-keys”) Parancs: `media-keys` (a monorepóban
-  `pnpm media-server:keys`); programból: `generateKey()` a `./apps-config`-ból.
+- Kulcs generálása: 32 véletlen bájt base64url-szövege (43 jel). (K: „media-keys”) Parancs: `media-keys` (a szerver repójában
+  `pnpm keys`); programból: `generateKey()` a `./apps-config`-ból.
 - ES256 kulcspár: **az app generálja** (`media-keys --keypair <app> [--content]`; programból `generateKeyPair()`), a
   titkos kulcs (PKCS#8 DER base64url) soha nem hagyja el az appot; az üzemeltetőhöz csak a `kid`, a fajta és a
   nyilvános kulcs megy, aki `media-keys --register <app> --kid <kid> --public-key <…> [--content] --write <apps.json>`
@@ -271,13 +270,13 @@ app érintetlen.
 
 ## 8. Feltöltés
 
-A szerver a fájlokat a `dir` alól, csak olvasva adja; a feltöltés rsync ssh-n. A szerződés (a referencia-implementáció
-a fogyasztó feltöltő eszköze):
+A szerver a fájlokat a `dir` alól, csak olvasva adja; a feltöltés rsync ssh-n. A szerződés (egy referencia-feltöltő
+egy fogyasztó app repójában valósítja meg; P):
 
 - Appenként egy **korlátozott ssh-kulcs** a szerver felhasználójának `authorized_keys`-ében, amely csak `rrsync`-et
   enged, csak az app könyvtárába; az rsync célja az rrsync gyökere, útvonal nélkül (`<host>:`). *(teszt nélkül:
   hoszt-konfiguráció, nincs a repóban, a teszthez ssh-szerver és rrsync kellene; a sor alakja:
-  `server/README.md` „Feltöltő kulcs és új app”)*
+  a repó `deploy/README.md`-je, „Feltöltő kulcs és új app”)*
 
   ```
   restrict,command="/usr/bin/rrsync -munge /srv/media-server/data/<dir>" ssh-ed25519 AAAA… media-upload-<app>
@@ -297,8 +296,7 @@ a fogyasztó feltöltő eszköze):
 ## 9. Ajánlott backend env-nevek
 
 Konvenció, nem kötelező (a `media-keys` ezeket írja ki, a `media-sign --env` / `--env-file` ezeket olvassa; K:
-„--write: hozzáad és kiírja …”, „--keypair”, „media-sign --env”). *(a fogyasztó
-backend env-sémájának tesztje)*
+„--write: hozzáad és kiírja …”, „--keypair”, „media-sign --env”).
 
 | Név | Jelentés |
 | --- | --- |

@@ -6,9 +6,9 @@ Védett médiaszerver (nginx + njs) és a kliensoldali csomagja, `@chromygabor/m
 packages/media-sdk/   @chromygabor/media-sdk – a protokoll nyilvános szerződése (SPEC.md), aláíró, ./testing, CLI
 server/               @chromygabor/media-server (private) – a termék: Dockerfile (saját image), nginx, njs,
                       compose.yaml (helyi futtatás, teszt), tesztek, mintamédia
-deploy/     a szerveres telepítés: compose.yaml (a kész image), .env-minta, host-blokk, deploy.sh,
+deploy/               generikus telepítés: deploy.sh, compose.yaml (a kész image), .env-minták, host-blokk minta,
                       üzemeltetői kézikönyv (README.md)
-docs/                 tervek és döntések (a monorepóból kiemelve, ill. átmásolva 2026-11-24)
+deploy/<cél>/         gitignore-olt: egy célgép saját adatai (.env: DEPLOY_HOST/USER/DIR; secrets/apps.json)
 ```
 
 A szerver a csomagot `workspace:*`-ként használja; az njs ↔ SDK paritást (közös vektorok, `validateApps`,
@@ -34,12 +34,22 @@ pnpm --filter @chromygabor/media-sdk check:standalone   # a csomag tarballja egy
 pnpm dev-media             # szintetikus mintamédia a server/dev-media/ alá (helyi futtatáshoz)
 pnpm keys <app> …          # kulcsgenerálás (media-keys; üzemeltetői eszköz), munkakönyvtár: server/
 pnpm sign <app> <assetKey> # próbalink a server/secrets/apps.local.json-ból (media-sign)
-pnpm server:deploy [--dry-run]   # telepítés a szerverre (deploy/deploy.sh; --rollback, --reload-config, --help)
+pnpm server:deploy <cél> [--dry-run]   # telepítés a deploy/<cél>/ célgépére (deploy/deploy.sh; --rollback, --reload-config, --help)
 ```
 
 Helyi futtatás: `server/README.md` „Helyi futtatás”. Telepítés, visszaállás, kulcsforgatás: `deploy/README.md`.
 
 ## Titkok
 
-A `server/secrets/` és a `deploy/*/secrets/` tartalma (az `apps.json`-ok) és a `.env`-fájlok gitignore-oltak; kulcs
-soha nem kerül a repóba.
+A `server/secrets/` tartalma, a `.env`-fájlok és a teljes `deploy/<cél>/` (a célgép adatai és az `apps.json` helyi
+példánya) gitignore-oltak; kulcs és telepítési adat soha nem kerül a repóba.
+
+## Tervezési előzmények
+
+A kommentekben és a CHANGELOG-ban álló `WPn` / `Dn` / „terv …” hivatkozások a fejlesztés belső tervdokumentumaira
+utalnak; ezek nem részei a repónak. A normatív leírás a [`SPEC.md`](packages/media-sdk/SPEC.md), az üzemeltetés a
+[`deploy/README.md`](deploy/README.md).
+
+## Licenc
+
+[MIT](LICENSE) – az egész repó (a `@chromygabor/media-sdk` és a szerver is).

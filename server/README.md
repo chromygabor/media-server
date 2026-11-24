@@ -3,12 +3,10 @@
 Védett médiaszerver – a **termék**: saját image (`Dockerfile`: a hivatalos `nginx` image tagre és digestre rögzítve, njs 1.0.2,
 benne a konfig és az njs) + egy njs-modul, amely a
 Bunny V2 directory-tokent (`kid`, `u` kiegészítéssel; `HS256-`) és a médiaszerver saját aszimmetrikus sémáját
-(`ES256-`, ECDSA P-256, az app saját kulcspárja; az aszimmetrikus terv, 2026-11-24 óta itt is)
-ellenőrzi, és az nginx statikus motorjával szolgál ki (Range, ETag, sendfile). Tervek: a terv 4.1–4.4, 7.2–7.3,
-az implementációs terv WP2–WP4; a saját image és a telepítés
-szétválasztása: a kiemelési terv WP49-e (a repóbeli példány a kiemeléskori pillanatkép, a jegyzetek a WP47-ben jönnek át).
-A konkrét telepítés (media-host: compose, `.env`, host-blokk, `deploy.sh`, üzemeltetői kézikönyv) a
-[`../deploy/`](../deploy/README.md) alatt van.
+(`ES256-`, ECDSA P-256, az app saját kulcspárja) ellenőrzi, és az nginx statikus motorjával szolgál ki (Range, ETag,
+sendfile). A protokoll normatív leírása: [`../packages/media-sdk/SPEC.md`](../packages/media-sdk/SPEC.md).
+A telepítés (generikus compose, `.env`-minta, host-blokk, `deploy.sh`, üzemeltetői kézikönyv) a
+[`../deploy/`](../deploy/README.md) alatt van; egy konkrét célgép adatai a gitignore-olt `deploy/<cél>/` alatt.
 Ügyfél-appból nem importál; a tesztek a `@chromygabor/media-sdk`-t használják, a kulcsgenerálás és a
 próbalink-aláírás a csomag `media-keys` / `media-sign` parancsa (a gyökér `pnpm keys` / `pnpm sign` hívja).
 
@@ -25,7 +23,7 @@ njs/media.js              token-ellenőrzés (= media-sdk verifySignedPath: stat
 njs/check-apps.js         az apps.json tartalmi ellenőrzése a konténerben (njs CLI), a nyilvános kulcsok görbéje is
 scripts/image-build.sh    image-építés: media-server:<verzió>-<SHA> + OCI-címkék (pnpm image:build), lásd Image
 scripts/make-test-video.sh   szintetikus mintamédia (ffmpeg): pnpm dev-media, és a próbafájlok a telepítéshez
-secrets/                  gitignore-olt (apps.local.json; a szerveré a ../deploy/secrets/ alatt)
+secrets/                  gitignore-olt (apps.local.json; egy célgépé a ../deploy/<cél>/secrets/ alatt)
 test/                     docker nélküli tesztek (pnpm test; a deploy.spec.ts a ../deploy/-t is nézi);
                           fixtures/apps.test.json: CSAK TESZT kulcsok
 test/docker/              docker-integrációs teszt az image-en (pnpm test:docker), lásd alább
@@ -137,12 +135,14 @@ bash server/scripts/image-build.sh --tag media-server:dev   # tetszőleges címk
 - Futáskor kívülről: `/etc/nginx/secrets/apps.json` és `/srv/media` csak olvasva, `read_only` gyökér, `tmpfs` a
   `/etc/nginx/conf.d`, `/var/cache/nginx`, `/run`, `/tmp` alá, `NET_GATEWAY` a compose alhálózatának átjárója.
 - OCI-címkék: `org.opencontainers.image.revision` (teljes SHA, piszkos fánál `-dirty` végződéssel), `.version` (a
-  `server/package.json`-ból), `.source`, `.title`, `.licenses` (`UNLICENSED`).
-- Regisztry nincs: egy telepítés a kész image-et `docker save | docker load`-dal kapja (a szerveré:
+  `server/package.json`-ból), `.source`, `.title`, `.licenses` (`MIT`).
+- Regisztry nincs: egy telepítés a kész image-et `docker save | docker load`-dal kapja (lásd
   [`../deploy/README.md`](../deploy/README.md)).
 
 ## Telepítések
 
-A termék nem tud a telepítéseiről. Egy telepítés könyvtára a repó `deploy/<név>/` alatt: saját `compose.yaml` (a
-kész image címkéjével, ugyanazzal a keményítéssel, mint a `compose.yaml` itt – a `test/deploy.spec.ts` ellenőrzi),
-`.env.example`, és ami még kell. Ma egy van: [`deploy/`](../deploy/README.md) (`pnpm server:deploy`).
+A termék nem tud a telepítéseiről. A generikus telepítés a repó [`deploy/`](../deploy/README.md) könyvtára: a
+`compose.yaml` (a kész image címkéjével, ugyanazzal a keményítéssel, mint a `compose.yaml` itt – a
+`test/deploy.spec.ts` ellenőrzi), a `.env`-minta, a host-blokk mintája és a `deploy.sh`. Egy célgép saját adatai
+(ssh-cím, felhasználó, könyvtár, az `apps.json` helyi példánya) a gitignore-olt `deploy/<cél>/` alatt élnek:
+`pnpm server:deploy <cél>`.

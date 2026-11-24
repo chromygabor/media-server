@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "comment": "A @chromygabor/media-sdk és a médiaszerver njs-ellenőrzésének közös vektorai (terv 4.1–4.4). A kulcsok CSAK TESZT kulcsok. Idők: unix-másodperc. A verify expected.status 200 = elfogadva.",
+  "comment": "A @chromygabor/media-sdk és a médiaszerver njs-ellenőrzésének közös vektorai (SPEC 1.–4.). A kulcsok CSAK TESZT kulcsok. Idők: unix-másodperc. A verify expected.status 200 = elfogadva.",
   "es256": {
     "comment": "ES256 séma (SPEC 2.; a médiaszerver kiterjesztése, Bunny-megfelelője nincs). CSAK TESZT kulcspárok: privateKey PKCS#8 DER base64url, publicKey a tömörítetlen P-256 pont base64url-ben. Az ECDSA-aláírás véletlenszerű, ezért bájtos sign-vektor nincs: a tokens rögzített, egyszer generált tokenek (ellenőrzésre), az aláírást oda-vissza próba fedi. A verify alakja a felső szintű verify-é, a keys a publicKeys/contentPublicKeys térképpel.",
     "kid": "2026e",

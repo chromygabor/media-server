@@ -5,9 +5,10 @@ A védett médiaszerver (`server/` ebben a repóban) kliensoldala: aláírt URL 
 (`node:crypto`).
 
 - **A protokoll normatív leírása: [`SPEC.md`](SPEC.md)** (URL-alak, token, státuszkódok, fejlécek, `apps.json`,
-  kulcsforgatás, feltöltés, ajánlott env-nevek). Az indoklás: a terv 4.
-- Fogyasztók a monorepóban: a backend (URL-aláíró, tartalomforrás, a tesztjei a
-  `./testing`-gel), a frontend e2e (`./testing`) és a médiaszerver tesztjei; a szerver repójának gyökerében a `pnpm keys` / `pnpm sign` a csomag parancsait hívja.
+  kulcsforgatás, feltöltés, ajánlott env-nevek). A telepítés üzemeltetői oldala a repó `deploy/README.md`-jében van.
+- Tipikus fogyasztók: egy app backendje (URL-aláírás, a tesztjei a `./testing`-gel), a frontend e2e-tesztjei
+  (`./testing`) és a médiaszerver saját tesztjei; a szerver repójának gyökerében a `pnpm keys` / `pnpm sign` a csomag
+  parancsait hívja.
 
 ```
 /bcdn_token=HS256-<sig>&kid=<kid>&token_path=<kódolt előtag>[&u=<uuid>]&expires=<unix>/<app>/<assetKey>
@@ -49,11 +50,10 @@ Két egyenrangú kulcsmodell, appenként és `kid`-enként választható:
    (`generateKey`, `addKey`, `generateKeyPair`, `addPublicKey`, `validateAppsFile`, `checkPublicKeys`).
 2. **`apps.json`-bejegyzés és feltöltő kulcs**: `dir`, `keys`, `contentKeys`, `origins`, `corp` (SPEC 6.), és egy
    `rrsync`-re korlátozott `authorized_keys`-sor az app könyvtárára (SPEC 8.). Lépésről lépésre:
-   [`server/README.md`](../../server/README.md) „Feltöltő kulcs és új app”.
+   a repó `deploy/README.md`-je, „Feltöltő kulcs és új app”.
 3. **URL-aláírás a backendben**: `createUrlSigner(…)`. A böngészős link egy könyvtár-tokennel készül a hatókörre
    (lejárat `min(tokenExp, most + maxTtl)`, `?v=` a `sha256`-ból, `_`/hatókör/biztonság/kiterjesztés-szűrés); ami nem
-   írható alá, az ok-kódként jön vissza (`SignRefusal`), naplózás nincs. A backend adapterje mintának:
-   URL-aláírója.
+   írható alá, az ok-kódként jön vissza (`SignRefusal`), naplózás nincs. Egy backend-adapter vázlata:
 
    ```ts
    import { createUrlSigner } from '@chromygabor/media-sdk';
@@ -159,7 +159,7 @@ pnpm --filter @chromygabor/media-sdk test
 pnpm --filter @chromygabor/media-sdk check:standalone   # pack + telepítés egy üres projektbe
 ```
 
-## Kiemelés külön repóba (recept)
+## Forrás és licenc
 
-A csomag a szerverrel együtt külön repóba került (`chromygabor/media-server`, `packages/media-sdk`); a kiemelés
-menete a kiemelési tervben van.
+A csomag forrása a szerverrel együtt a `chromygabor/media-server` repó `packages/media-sdk` könyvtára. Licenc: MIT
+(a repó gyökerének `LICENSE`-e).
