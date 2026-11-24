@@ -192,6 +192,24 @@ if (!ready) {
   });
 } else {
   describe('konténer és konfig', () => {
+    it('az image-et teszteli: a konfig és az njs az image-ben, csak az apps.json és a médiagyökér csatolt (WP49)', async () => {
+      const id = (await dc(['ps', '-q', 'media'])).stdout.trim();
+      expect(id).not.toBe('');
+      const r = await new Promise<string>((resolve, reject) => {
+        const p = spawn('docker', ['inspect', '--format', '{{.Config.Image}}|{{range .Mounts}}{{.Destination}}:{{.RW}} {{end}}', id]);
+        let out = '';
+        p.stdout.on('data', (d: Buffer) => (out += d.toString()));
+        p.on('error', reject);
+        p.on('close', () => resolve(out.trim()));
+      });
+      const [img, mounts] = r.split('|');
+      expect(img).toBe(ready.image);
+      expect((mounts ?? '').trim().split(/\s+/).sort()).toEqual(['/etc/nginx/secrets/apps.json:false', '/srv/media:false']);
+      const files = await exec(['sh', '-c', 'ls /etc/nginx/media /etc/nginx/media/templates /etc/nginx/njs']);
+      expect(files.code).toBe(0);
+      for (const f of ['nginx.conf', 'media.conf', 'realip.conf.template', 'media.js', 'check-apps.js']) expect(files.stdout).toContain(f);
+    });
+
     it('/healthz → 204', async () => {
       const r = await get('/healthz');
       expect(r.status).toBe(204);

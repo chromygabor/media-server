@@ -13,6 +13,7 @@
     "keys": "pnpm --silent --filter @chromygabor/media-server exec media-keys",
     "sign": "pnpm --silent --filter @chromygabor/media-server exec media-sign --apps secrets/apps.local.json",
     "test:docker": "pnpm --filter @chromygabor/media-server test:docker",
+    "image:build": "bash server/scripts/image-build.sh",
     "server:deploy": "server/deploy/deploy.sh",
     "dev-media": "pnpm --filter @chromygabor/media-server dev-media"
   }

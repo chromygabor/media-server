@@ -1,6 +1,7 @@
 // A konfigfájlok összhangja (implementációs terv WP2 7.; csomagterv WP32, WP33): a kiterjesztés-tábla, a kulcs-regexek
 // és az apps.json-validálás a `@chromygabor/media-sdk`-é (a backend is onnan importál); a compose minden változója a
-// .env.example-ben; rögzített image; a napló nem tartalmazhat tokent.
+// .env.example-ben; rögzített alap-image (Dockerfile); a napló nem tartalmazhat tokent. A szerveres telepítés
+// (deploy/) ellenőrzése: deploy.spec.ts.
 
 import { readFileSync } from 'node:fs';
 import {
@@ -299,16 +300,37 @@ describe('compose.yaml és .env.example', () => {
     expect(envExample).not.toMatch(/[A-Za-z0-9+/_-]{40,}/);
   });
 
-  it('rögzített image tag + digest (WP0)', () => {
-    expect(compose).toMatch(/image: nginx:\d+\.\d+\.\d+-alpine@sha256:[0-9a-f]{64}\n/);
+  it('saját image a Dockerfile-ból, rögzített alap-image tag + digest (WP0, WP49)', () => {
+    const froms = [...read('Dockerfile').matchAll(/^FROM\s+(\S+)/gm)].map((m) => m[1]);
+    expect(froms).toHaveLength(1);
+    expect(froms[0]).toMatch(/^nginx:\d+\.\d+\.\d+-alpine@sha256:[0-9a-f]{64}$/);
+    expect(compose).toMatch(/^ {4}build: \.$/m);
+    expect(compose).toMatch(/^ {4}image: \$\{MEDIA_IMAGE:-media-server:dev\}$/m);
+  });
+
+  it('a Dockerfile a konfigot és az njs-t bemásolja, a .dockerignore csak ezeket engedi (WP49)', () => {
+    const dockerfile = read('Dockerfile');
+    const sources = [...dockerfile.matchAll(/^COPY\s+(.+)\s+\S+$/gm)].flatMap((m) => (m[1] as string).split(/\s+/));
+    expect(sources.sort()).toEqual(
+      ['nginx/media.conf', 'nginx/nginx.conf', 'nginx/templates/*.template', 'njs/check-apps.js', 'njs/media.js'].sort(),
+    );
+    const allowed = read('.dockerignore')
+      .split('\n')
+      .filter((l) => l.startsWith('!'))
+      .map((l) => l.slice(1));
+    expect(allowed.sort()).toEqual([...sources].sort());
+    expect(read('.dockerignore')).toMatch(/^\*$/m);
+    expect(dockerfile).toMatch(/^CMD \["nginx", "-c", "\/etc\/nginx\/media\/nginx\.conf", "-g", "daemon off;"\]$/m);
   });
 
   it('csak olvasható gyökér és kötetek', () => {
     expect(compose).toMatch(/read_only: true/);
     const block = /\n {4}volumes:\n((?: {6}- .*\n)+)/.exec(compose)?.[1] ?? '';
     const mounts = block.trimEnd().split('\n');
-    expect(mounts.length).toBe(4);
+    // Csak az apps.json és a médiagyökér; a konfig és az njs az image-ben van (WP49).
+    expect(mounts.length).toBe(2);
     for (const mnt of mounts) expect(mnt.endsWith(':ro'), mnt).toBe(true);
+    expect(block).not.toMatch(/\.\/(nginx|njs)\b/);
   });
 
   it('a real_ip az átjárót bízza meg (envsubst-sablon)', () => {
@@ -330,34 +352,5 @@ describe('napló: token nélkül', () => {
     expect(nginxConf).toMatch(/error_log\s+\/dev\/stderr\s+warn;/);
     expect(mediaConf).toMatch(/limit_conn_log_level\s+info;/);
     expect(mediaConf).toMatch(/limit_req_log_level\s+info;/);
-  });
-});
-
-describe('deploy: host-nginx blokk és deploy.sh (WP4)', () => {
-  const host = read('deploy/host-nginx.conf.example');
-  const deploy = read('deploy/deploy.sh');
-  const port = /^PORT=(\d+)$/m.exec(envExample)?.[1];
-
-  it('proxy_pass URI-rész nélkül, a .env.example portjára (különben a %2F dekódolódik)', () => {
-    const passes = [...host.matchAll(/^\s*proxy_pass\s+([^;]+);/gm)].map((m) => m[1]);
-    expect(passes).toEqual([`http://127.0.0.1:${port}`]);
-  });
-
-  it('a host nem naplóz tokent, nem tömörít, nem pufferel, nem cache-el', () => {
-    expect(host).toMatch(/^\s*access_log off;/m);
-    expect(host).toMatch(/^\s*error_log \S+ crit;/m);
-    expect(host).toMatch(/^\s*gzip off;/m);
-    expect(host).toMatch(/^\s*proxy_buffering off;/m);
-    expect(host).toMatch(/^\s*proxy_cache off;/m);
-    expect(host).toMatch(/^\s*proxy_set_header X-Forwarded-For \$remote_addr;/m);
-    expect(host).toMatch(/^\s*server_name media\.example\.com;/m);
-  });
-
-  it('a deploy.sh csak a compose.yaml-t, az nginx/-t és az njs/-t szinkronizálja, sudo nélkül', () => {
-    expect(deploy).toMatch(/^set -euo pipefail$/m);
-    expect(deploy).toMatch(/for d in nginx njs; do/);
-    expect(deploy).not.toMatch(/\bsudo\s+(?!install -d)/);
-    const rsyncTargets = [...deploy.matchAll(/"\$TARGET:\$DEPLOY_DIR\/([^"]*)"/g)].map((m) => m[1]);
-    expect(rsyncTargets).toEqual(['compose.yaml', '$d/']);
   });
 });

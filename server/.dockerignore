@@ -1,0 +1,7 @@
+# Pozitív lista: a build-kontextusba csak a konfig és az njs kerül (titok, mintamédia, teszt soha).
+*
+!nginx/nginx.conf
+!nginx/media.conf
+!nginx/templates/*.template
+!njs/media.js
+!njs/check-apps.js

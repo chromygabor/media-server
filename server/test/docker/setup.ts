@@ -2,7 +2,10 @@
 // (ffmpeg-gel generált rövid MP4 / M4A / JPG, magolt bináris, szintetikus _content/<v>.json.gz – valódi tananyag
 // NEM), majd a compose indítása egyedi projektnévvel, szabad porttal és saját alhálózattal, hogy egy esetleg futó
 // példánnyal ne ütközzön; a végén `down` és az ideiglenes könyvtár törlése.
-// Ha nincs docker (vagy nem fut a démon), vagy nincs ffmpeg: a spec érthető üzenettel KIHAGY, nem bukik.
+// A teszt az IMAGE-et teszteli (kiemelési terv WP49), csatolt nginx/ és njs/ nélkül: a MEDIA_IMAGE-ben megadott kész
+// image-et (pl. a deploy kiadási címkéjét), ennek hiányában előbb a scripts/image-build.sh-val media-server:dev-et épít.
+// Ha nincs docker (vagy nem fut a démon), vagy nincs ffmpeg: a spec érthető üzenettel KIHAGY, nem bukik –
+// kivéve MEDIA_DOCKER_REQUIRED=1 mellett (deploy, CI): akkor hiba.
 
 import { execFile, spawnSync } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
@@ -19,6 +22,8 @@ const run = promisify(execFile);
 export const APP_DIR = fileURLToPath(new URL('../..', import.meta.url));
 const TMP_BASE = join(APP_DIR, 'test', '.tmp');
 const APPS_JSON = join(APP_DIR, 'test', 'fixtures', 'apps.test.json');
+const IMAGE_BUILD = join(APP_DIR, 'scripts', 'image-build.sh');
+const DEV_IMAGE = 'media-server:dev';
 
 /** A spec ezt kapja (`inject('mediaDocker')`). */
 export type DockerEnv =
@@ -28,6 +33,8 @@ export type DockerEnv =
       host: string;
       port: number;
       gateway: string;
+      /** A tesztelt image (címke). */
+      image: string;
       /** A `docker compose` közös argumentumai (projekt, compose-fájl, env-fájl). */
       composeArgs: string[];
       /** A teszt-gyökér (a konténerben /srv/media). */
@@ -168,6 +175,9 @@ async function compose(args: string[], composeArgs: string[]): Promise<{ stdout:
 
 export default async function setup(project: TestProject): Promise<() => Promise<void>> {
   const skip = (why: string): (() => Promise<void>) => {
+    if (process.env.MEDIA_DOCKER_REQUIRED === '1') {
+      throw new Error(`[media-server test:docker] MEDIA_DOCKER_REQUIRED=1, de nem futtatható: ${why}`);
+    }
     console.warn(`\n[media-server test:docker] KIHAGYVA: ${why}\n`);
     project.provide('mediaDocker', { ok: false, skip: why });
     return async () => {};
@@ -177,6 +187,8 @@ export default async function setup(project: TestProject): Promise<() => Promise
   }
   if (!has('docker', ['compose', 'version'])) return skip('nincs `docker compose` (v2 plugin)');
   if (!has('ffmpeg', ['-version'])) return skip('nincs ffmpeg (a szintetikus média generálásához kell)');
+
+  const image = await resolveImage();
 
   mkdirSync(TMP_BASE, { recursive: true });
   const dir = mkdtempSync(join(TMP_BASE, 'docker-'));
@@ -198,6 +210,7 @@ export default async function setup(project: TestProject): Promise<() => Promise
       writeFileSync(
         envFile,
         [
+          `MEDIA_IMAGE=${image}`,
           `MEDIA_ROOT=${root}`,
           `APPS_JSON=${APPS_JSON}`,
           'BIND=127.0.0.1',
@@ -209,8 +222,9 @@ export default async function setup(project: TestProject): Promise<() => Promise
         ].join('\n'),
       );
       try {
-        await compose(['up', '-d', '--wait', '--wait-timeout', '60'], composeArgs);
-        project.provide('mediaDocker', { ok: true, host: '127.0.0.1', port, gateway, composeArgs, root });
+        await compose(['up', '-d', '--wait', '--wait-timeout', '60', '--no-build', '--pull', 'never'], composeArgs);
+        console.info(`\n[media-server test:docker] image: ${image}\n`);
+        project.provide('mediaDocker', { ok: true, host: '127.0.0.1', port, gateway, image, composeArgs, root });
         return teardown;
       } catch (e) {
         lastErr = e;
@@ -223,6 +237,21 @@ export default async function setup(project: TestProject): Promise<() => Promise
     await teardown();
     throw e;
   }
+}
+
+/** A tesztelendő image: a MEDIA_IMAGE (léteznie kell), különben a Dockerfile-ból épített media-server:dev. */
+async function resolveImage(): Promise<string> {
+  const given = process.env.MEDIA_IMAGE?.trim();
+  if (given) {
+    try {
+      await run('docker', ['image', 'inspect', '--format', '{{.Id}}', given]);
+    } catch {
+      throw new Error(`[media-server test:docker] a MEDIA_IMAGE (${given}) nem létező image`);
+    }
+    return given;
+  }
+  await run('bash', [IMAGE_BUILD, '--tag', DEV_IMAGE, '--quiet'], { cwd: APP_DIR, maxBuffer: 64 * 1024 * 1024 });
+  return DEV_IMAGE;
 }
 
 async function teardown(): Promise<void> {

@@ -1,21 +1,19 @@
-# A médiaszerver (terv 4.4, 7.2, 7.3; implementációs terv WP2).
-# Helyben és a szerveren ugyanez; a különbség a .env-ben (lásd .env.example). Saját image nincs: a hivatalos,
-# tagre és digestre rögzített nginx (njs 1.0.2), a konfig, az njs és az apps.json csak olvasva csatolva.
+# A médiaszerver helyi futtatása és docker-tesztje (kiemelési terv WP49; terv 4.4, 7.2). Csak fejlesztésre: a
+# szerveres telepítés a ../deploy/compose.yaml (ugyanez a keményítés, a kész image címkéjével).
+# Az image a Dockerfile-ból épül (a konfig és az njs benne van); csak az apps.json és a médiagyökér csatolt.
 #
-#   docker compose up -d --wait
+#   docker compose up -d --build --wait                                         # konfig- / njs-változás után is
 #   docker compose exec media nginx -c /etc/nginx/media/nginx.conf -t          # konfigteszt
-#   docker compose exec media nginx -c /etc/nginx/media/nginx.conf -s reload   # újratöltés
+#   docker compose exec media nginx -c /etc/nginx/media/nginx.conf -s reload   # újratöltés (új apps.json-tartalom)
 
 name: ${COMPOSE_PROJECT_NAME:-media-server}
 
 services:
   media:
-    image: nginx:1.30.7-alpine@sha256:caf4e1e032a20f9c3c5e28fc7f25ffd768ad8677b4975c54193075997b3a97e3
-    # Az image entrypointja csak a templates/ envsubst-jéhez kell (realip.conf a NET_GATEWAY-ből).
-    command: ["nginx", "-c", "/etc/nginx/media/nginx.conf", "-g", "daemon off;"]
+    build: .
+    # A docker-teszt a MEDIA_IMAGE-dzsel egy kész (pl. kiadási) image-et indít, build nélkül.
+    image: ${MEDIA_IMAGE:-media-server:dev}
     environment:
-      NGINX_ENVSUBST_TEMPLATE_DIR: /etc/nginx/media/templates
-      NGINX_ENVSUBST_OUTPUT_DIR: /etc/nginx/conf.d
       NET_GATEWAY: ${NET_GATEWAY:-172.29.90.1}
     read_only: true
     tmpfs:
@@ -26,8 +24,6 @@ services:
     ports:
       - "${BIND:-127.0.0.1}:${PORT:-10090}:80"
     volumes:
-      - ./nginx:/etc/nginx/media:ro
-      - ./njs:/etc/nginx/njs:ro
       - ${APPS_JSON:?APPS_JSON kell (.env)}:/etc/nginx/secrets/apps.json:ro
       - ${MEDIA_ROOT:?MEDIA_ROOT kell (.env)}:/srv/media:ro
     networks:
