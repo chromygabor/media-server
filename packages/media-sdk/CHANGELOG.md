@@ -25,6 +25,11 @@ patch: javítás).
   (`--apps` az üzemeltetőnek, `--env` / `--env-file` az appnak, `apps.json` nélkül).
 - **`./testing`:** hamis médiaszerver a SPEC szabályaival és CSAK TESZT kulcsok (`testKeys`, `testAppsFile()`) a
   fogyasztók tesztjeihez.
+- **SPEC mint szállítói szerződés:** új 10. pont, **App-regisztráció** (amit az app kér, amit az üzemeltető
+  visszaad HS256-nál és ES256-nál, feltöltési hozzáférés korlátozott rrsync-sorral, csatornaszabály, env és
+  próbalink `media-sign --env`-vel, kivezetés); a 7. pont (kulcsforgatás) kétoldalú kézfogás, mindkét sémára, átfedéssel
+  és vészhelyzettel. A SPEC szállító-semleges: nem hivatkozik egy konkrét fogyasztóra, a feltöltés szabályai a
+  szerződés maguk.
 - **Terjesztés:** npm-regisztry nélkül, a `chromygabor/media-server` repó `sdk-v<verzió>` GitHub Release-ének
   mellékleteként (`chromygabor-media-sdk-<verzió>.tgz`); a fogyasztó URL-függőségként telepíti (README,
   „Telepítés”). A melléklet pontosan az a tarball, amelyet a kiadási szkript (`pnpm release:sdk`) a `check:standalone`-
@@ -38,6 +43,10 @@ patch: javítás).
   fordulnak.
 
 ### Változott
+- SPEC: a 8. pont (feltöltés) a feltöltőre vonatkozó szabályokat forrásmegjelölés nélkül adja (a „P” tesztjel
+  kikerült: a feltöltő a fogyasztó kódja); az `authorized_keys`-sor helyőrzős (`<médiagyökér>/<dir>`); az `apps.json`
+  példája semleges (`demo`); az `es256` vektorok futtatóinak leírása a mai állapotra javítva. A protokoll nem
+  változott.
 - Licenc: `UNLICENSED` → **MIT** (a repó gyökerének `LICENSE`-e; az egész repó MIT). A csomag `private: true`
   marad: GitHub Release-mellékletként terjed, npm-regisztrybe nem kerül.
 - `testKeys.apps` / `testAppsFile()`: a `publicKeys` és a `contentPublicKeys` is benne van (a `testKeys.es256`

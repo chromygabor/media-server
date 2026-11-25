@@ -5,7 +5,8 @@ A védett médiaszerver (`server/` ebben a repóban) kliensoldala: aláírt URL 
 (`node:crypto`).
 
 - **A protokoll normatív leírása: [`SPEC.md`](SPEC.md)** (URL-alak, token, státuszkódok, fejlécek, `apps.json`,
-  kulcsforgatás, feltöltés, ajánlott env-nevek). A telepítés üzemeltetői oldala a repó `deploy/README.md`-jében van.
+  kulcsforgatás, feltöltés, ajánlott env-nevek, App-regisztráció). A telepítés üzemeltetői oldala a repó
+  `deploy/README.md`-jében van.
 - Tipikus fogyasztók: egy app backendje (URL-aláírás, a tesztjei a `./testing`-gel), a frontend e2e-tesztjei
   (`./testing`) és a médiaszerver saját tesztjei; a szerver repójának gyökerében a `pnpm keys` / `pnpm sign` a csomag
   parancsait hívja.
@@ -51,33 +52,34 @@ npm install https://github.com/chromygabor/media-server/releases/download/sdk-v1
 
 ## Gyors kezdés egy új apphoz
 
-Két egyenrangú kulcsmodell, appenként és `kid`-enként választható:
+Az app a szerverhez nem fér hozzá: amit kap, azt az üzemeltetőtől kapja, App-regisztrációval (SPEC 10.). Két
+egyenrangú kulcsmodell, appenként és `kid`-enként választható:
 
 - **ES256 (aszimmetrikus, ajánlott új apphoz):** az app generálja a kulcspárt, az üzemeltetőhöz csak a nyilvános
-  kulcs megy. Titok nem halad át a regisztráció csatornáján.
+  kulcs megy; a regisztráció csatornáján titok nem halad át.
+- **HS256 (HMAC, Bunny-kompatibilis):** az üzemeltető generálja a kulcsot, és titkosított csatornán adja át.
 
-  ```sh
-  media-keys --keypair <app> [--content] [--kid <id>]      # app: env-sorok (titok) + az üzemeltetőnek küldendő sor
-  media-keys --register <app> --kid <id> --public-key <87 jel> [--content] --write apps.json   # üzemeltető
-  media-sign --env-file .env <assetKey> [--u <uuid>] [--content]                                # app: próbalink
-  ```
+1. **App-regisztráció** (SPEC 10.1–10.4): az app elküldi a kérést (app-név, originök, CORP, séma, kell-e
+   tartalomkulcs és feltöltés, a leghosszabb link). ES256-nál előtte:
 
-  A backend env-je (SPEC 9.): `MEDIA_SERVER_PRIVATE_KEYS={"<kid>":"<PKCS#8 base64url>"}`, `MEDIA_SERVER_KEY_ID`,
-  tartalomhoz `MEDIA_SERVER_CONTENT_KEY_ID` + `MEDIA_SERVER_CONTENT_PRIVATE_KEY`. Az üzemeltető a nyilvános kulcs első
-  és utolsó 8 jelét egy második csatornán egyezteti (a `--keypair` kiírja).
-- **HMAC (HS256, Bunny-kompatibilis):** az üzemeltető generálja a kulcsot (`media-keys <app>`), és titkosított
-  csatornán adja át; a lépések lent.
+   ```sh
+   media-keys --keypair <app> [--content] [--kid <id>]   # env-sorok (titok, az appnál marad) + az üzemeltetőnek küldendő blokk
+   ```
 
-1. **Kulcs**: `media-keys <app> [--content] [--kid <id>] [--write <apps.json>] [--dir <könyvtár>]` (a szerver repójában
-   `pnpm keys …`). Kiírja az `apps.json`-részletet és a backend env-értékeit (SPEC 9.); `--write`-tal
-   hozzáadja a fájlhoz (meglévő `kid`-et nem ír felül). A kulcs titok. Próbalink: `media-sign --apps <apps.json>
-   <app> <assetKey> [--u <uuid>] [--content] [--base <url>]` (üzemeltető), vagy az app a saját env-jéből:
-   `media-sign --env | --env-file <.env> <assetKey>`. Programból: `@chromygabor/media-sdk/apps-config`
-   (`generateKey`, `addKey`, `generateKeyPair`, `addPublicKey`, `validateAppsFile`, `checkPublicKeys`).
-2. **`apps.json`-bejegyzés és feltöltő kulcs**: `dir`, `keys`, `contentKeys`, `origins`, `corp` (SPEC 6.), és egy
-   `rrsync`-re korlátozott `authorized_keys`-sor az app könyvtárára (SPEC 8.). Lépésről lépésre:
-   a repó `deploy/README.md`-je, „Feltöltő kulcs és új app”.
-3. **URL-aláírás a backendben**: `createUrlSigner(…)`. A böngészős link egy könyvtár-tokennel készül a hatókörre
+   Az üzemeltető visszaadja az alap-URL-t, az app-nevet, a `kid`-eket, HS256-nál a kulcsokat is; feltöltéshez a
+   hosztot, a felhasználót, a hoszt-kulcs ujjlenyomatát és az rsync célját (az app ehhez a saját ed25519 nyilvános
+   ssh-kulcsát küldi).
+2. **Env** (SPEC 9., példa: SPEC 10.5): `MEDIA_SERVER_URL`, `MEDIA_SERVER_APP`, `MEDIA_SERVER_KEY_ID` és
+   `MEDIA_SERVER_KEYS` (HS256) vagy `MEDIA_SERVER_PRIVATE_KEYS` (ES256), tartalomhoz `MEDIA_SERVER_CONTENT_KEY_ID` és
+   `MEDIA_SERVER_CONTENT_KEY` vagy `MEDIA_SERVER_CONTENT_PRIVATE_KEY`, valamint `MEDIA_URL_MAX_TTL`.
+3. **Próbalink** a saját env-ből, `apps.json` nélkül (SPEC 10.5); a regisztráció akkor kész, ha `200`:
+
+   ```sh
+   media-sign --env-file .env <assetKey> [--u <uuid>]      # vagy --env (a folyamat környezetéből); _content/: --content
+   curl -sI '<url>'                                        # 200
+   ```
+
+4. **URL-aláírás a backendben**: `createUrlSigner(…)`. A böngészős link egy könyvtár-tokennel készül a hatókörre
    (lejárat `min(tokenExp, most + maxTtl)`, `?v=` a `sha256`-ból, `_`/hatókör/biztonság/kiterjesztés-szűrés); ami nem
    írható alá, az ok-kódként jön vissza (`SignRefusal`), naplózás nincs. Egy backend-adapter vázlata:
 
@@ -102,7 +104,7 @@ Két egyenrangú kulcsmodell, appenként és `kid`-enként választható:
    const content = signer.signContentFile('2026.11.23-1');   // { url, expiresAt } vagy { error }
    ```
 
-4. **Teszt**: `startFakeMediaServer(…)` és `testKeys` a `@chromygabor/media-sdk/testing`-ből. A hamis szerver a valódi
+5. **Teszt**: `startFakeMediaServer(…)` és `testKeys` a `@chromygabor/media-sdk/testing`-ből. A hamis szerver a valódi
    szabályaival dönt (ellenőrzési sorrend és státuszkódok, kiterjesztés-tábla, `Range`, CORS, a SPEC 5. fejlécei), a
    fájlt a `<root>/<dir>/<assetKey>`-ből adja; a `testKeys` a közös tesztvektorok CSAK TESZT kulcsai egy kész
    `apps.json`-nal. Korlátok (`429`, `503`) és napló nincs benne: azt a valódi szerver docker-tesztje fedi
@@ -122,6 +124,20 @@ Két egyenrangú kulcsmodell, appenként és `kid`-enként választható:
    fake.override = { status: 500 };        // vagy { delayMs }, { body, headers }, { truncateAt }, vagy egy (async) függvény
    await fake.close();
    ```
+
+6. **Feltöltés** (SPEC 8.): rsync ssh-n a kapott korlátozott kulccsal, az rrsync gyökerébe (`<felhasználó>@<host>:`),
+   `--chmod=D755,F644`, `--delete` nélkül; a `_content/` kiadása `--ignore-existing`-gel.
+7. **Kulcsforgatás** (SPEC 7.): ugyanez a kézfogás egy új `kid`-del, a régi mellett; a régi a visszaigazolás és a
+   `MEDIA_URL_MAX_TTL` után törlődik.
+
+**Üzemeltetői eszközök** (az app nem használja őket): `media-keys <app> [--content] [--kid <id>] [--write <apps.json>]
+[--dir <könyvtár>]` (HS256-kulcs; kiírja az `apps.json`-részletet és az app env-sorait; `--write`-tal hozzáadja,
+meglévő `kid`-et nem ír felül; a szerver repójában `pnpm keys …`), `media-keys --register <app> --kid <id>
+--public-key <87 jel> [--content] --write <apps.json>` (ES256 nyilvános kulcs felvétele), `media-sign --apps
+<apps.json> <app> <assetKey> […]` (HS256-os próbalink az `apps.json`-ból). Az `apps.json` (SPEC 6.), a feltöltő
+`authorized_keys`-sora (SPEC 8.) és a célgép lépései: a repó `deploy/README.md`-je, „Kulcsok” és „Feltöltő kulcs és
+új app”. Programból: `@chromygabor/media-sdk/apps-config` (`generateKey`, `addKey`, `generateKeyPair`,
+`addPublicKey`, `validateAppsFile`, `checkPublicKeys`).
 
 ## Felület
 

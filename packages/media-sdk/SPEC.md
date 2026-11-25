@@ -14,12 +14,16 @@ Minden állítás mögött zárójelben a teszt, amely fedi (a csomagon belül a
 | **C** | `server/test/config.spec.ts` (konfigfájlok összhangja) |
 | **D** | `server/test/docker/media.docker.spec.ts` (a futó konténer HTTP-n) |
 | **K** | `src/cli/cli.spec.ts` (a `media-keys` / `media-sign` parancs: kulcsgenerálás, próbalink) és `src/apps-config.spec.ts` (`validateAppsFile`) |
-| **P** | a referencia-feltöltő tesztjei (egy fogyasztó app repójában; ez a repó nem tartalmazza) |
 
-Az `es256` blokk vektorait (ES256 séma) ma a TS futtatja (`src/vectors.spec.ts`); az njs, a konténer CLI-je és a hamis
-szerver a séma szerveroldali és `./testing`-beli bekötésével veszi át őket.
+Az `es256` blokk vektorait (ES256 séma) ugyanez a négy futtatja: a TS, az njs Node alatt, a konténer CLI-je és a hamis
+szerver (V).
 
-A teszt nélküli állítás jelölése: *(teszt nélkül)*, egy fél mondatos indokkal. Minden idő unix-másodperc.
+A teszt nélküli állítás jelölése: *(teszt nélkül)*, egy fél mondatos indokkal; egy egész lépéssornál (7., 10. pont) a
+pont elején, egyszer. Minden idő unix-másodperc.
+
+A két fél: az **app** (egy fogyasztó: a backendje ír alá, a feltöltője tölt fel) és az **üzemeltető** (a szerver
+gazdája: `apps.json`, célgép, feltöltő kulcsok). Az app a szerverhez és az `apps.json`-hoz nem fér hozzá; a kettő
+kapcsolatát a 10. pont (App-regisztráció) írja le.
 
 ## 1. URL-alak
 
@@ -67,7 +71,7 @@ kiterjesztése, Bunny-megfelelője nincs; a Bunny-kompatibilis séma a HS256.
 - `u` nélkül a `signing_data`-ban nincs `&u=`. (T: „u nélkül nincs u=”)
 - Base64URL: `+` → `-`, `/` → `_`, a záró `=` elhagyva. (T: „base64url”)
 - Az aláírás ellenőrzése **időállandó** összehasonlítással történik. (teszt nélkül: az időállandóság, mert egy
-  időmérő teszt a CI-ban maga volna ingadozó; a token hossza rögzített, így a hossz sem szivárog. T csak az eredményt
+  időmérő teszt maga volna ingadozó; a token hossza rögzített, így a hossz sem szivárog. T csak az eredményt
   nézi)
 - **ES256:** ECDSA a P-256 görbén SHA-256-tal, az aláírt szöveg ugyanaz az `M` (a `kid` benne van, így egy aláírás
   nem vihető át másik `kid`-re). Az aláírás 64 bájt: `r ‖ s`, 32–32 bájt big-endian (IEEE P1363), Base64URL-ben 86 jel.
@@ -191,8 +195,8 @@ jön, token-ellenőrzés nélkül (preflighthoz). (N)
 
 A `403` / `404` / `410` / `429` hibaválaszon (a named location-ök, fejlécszűrő nélkül) csak az
 `X-Content-Type-Options: nosniff` és a `Cache-Control: no-store` jár; CORS, CORP és `Vary` **nincs**. A `<video>`,
-`<audio>` és `<img>` ezt nem igényli; a `hls.js` CORS nélkül a `410`-et nem látja, ezért a HLS előtt ez újra
-eldöntendő (D99). (D: „token nélkül → 403, minimális törzs, no-store”; N: `denied`)
+`<audio>` és `<img>` ezt nem igényli; a `hls.js` CORS nélkül a `410`-et nem látja, ezért egy HLS-lejátszó
+bevezetése előtt ez újra eldöntendő. (D: „token nélkül → 403, minimális törzs, no-store”; N: `denied`)
 
 - Tömörítés nincs (`Content-Encoding` sosem). (D)
 - Korlátok (kiinduló értékek): `limit_conn` app + `u` szerint 3 (`u` nélkül nem korlátoz), appenként 40;
@@ -213,13 +217,13 @@ pedig minden kérés `403 apps-invalid`. (D: „check-apps.js”; N: „hibás v
 
 ```json
 {
-  "elearning": {
-    "dir": "elearning",
+  "demo": {
+    "dir": "demo",
     "keys":              { "2026a": "<legalább 43 jeles base64(url)>" },
     "contentKeys":       { "2026c": "<…>" },
     "publicKeys":        { "2026e": "<87 jeles base64url, tömörítetlen P-256 pont>" },
     "contentPublicKeys": { "2026f": "<…>" },
-    "origins": ["https://elearning.example"],
+    "origins": ["https://app.example.com"],
     "corp": "same-site"
   }
 }
@@ -240,8 +244,8 @@ alatt”, „közös dir…”: két app egy `dir`-en, a CORP és a CORS appenk�
 validateAppsFile”, ebben a közös `dir` is.) A csomag a szabályokat a `@chromygabor/media-sdk/apps-config`
 `validateAppsFile()`-jával adja (az elfogadás és a hibák száma az njs-ével azonos).
 
-- Kulcs generálása: 32 véletlen bájt base64url-szövege (43 jel). (K: „media-keys”) Parancs: `media-keys` (a szerver repójában
-  `pnpm keys`); programból: `generateKey()` a `./apps-config`-ból.
+- Kulcs generálása: 32 véletlen bájt base64url-szövege (43 jel). (K: „media-keys”) Parancs: `media-keys` (üzemeltetői
+  eszköz; a szerver repójában `pnpm keys`); programból: `generateKey()` a `./apps-config`-ból.
 - ES256 kulcspár: **az app generálja** (`media-keys --keypair <app> [--content]`; programból `generateKeyPair()`), a
   titkos kulcs (PKCS#8 DER base64url) soha nem hagyja el az appot; az üzemeltetőhöz csak a `kid`, a fajta és a
   nyilvános kulcs megy, aki `media-keys --register <app> --kid <kid> --public-key <…> [--content] --write <apps.json>`
@@ -255,43 +259,62 @@ validateAppsFile”, ebben a közös `dir` is.) A csomag a szabályokat a `@chro
 
 ## 7. Kulcsforgatás
 
-Appenként és kulcsfajtánként független. A több `kid` egyidejű érvényessége, és hogy a régi törlése után a vele
-aláírt link `403 unknown-kid`, az új pedig marad: T: „kulcsforgatás: több kid egyidejűleg”; V: „rossz kid”.
-*(teszt nélkül: a menet, mert üzemeltetési lépéssor – feltöltés, deploy, backend-váltás –, unit-teszttel nem fedhető)*
+Appenként és kulcsfajtánként (böngészős, tartalom) független, a többi app érintetlen. A forgatás eszköze a `kid`: a
+régi és az új `kid` egy átfedési ideig együtt érvényes, a séma `kid`-enként választható (így HS256 → ES256 váltás is
+forgatás). Ami ebből teszttel fedett: több `kid` egyidejű érvényessége, és hogy a régi törlése után a vele aláírt
+link `403 unknown-kid`, az új pedig marad (T: „kulcsforgatás: több kid egyidejűleg”; V: „rossz kid”; K: „kulcsforgatás
+az app oldalán: két kid az env-ben, a MEDIA_SERVER_KEY_ID választ; HS256 → ES256; …”). *(teszt nélkül: a lépéssor,
+mert két fél üzemeltetési menete – kulcsátadás, `apps.json`-csere, az app élesítése –, unit-teszttel nem fedhető)*
 
-1. Új `kid` + kulcs az `apps.json`-ba (a régi marad), feltöltés és `deploy` (az `apps.json` változásánál a deploy
-   restartol, nem reloadol: az egy fájlként csatolt `apps.json` új inode-ot kap).
-2. Az aláíró (a backend) ráválta az új `kid`-re.
-3. A régi `kid` törölhető, amikor a vele kiadott leghosszabb link is lejárt (böngészős: a backend `MEDIA_URL_MAX_TTL`-je;
-   tartalom: pár perc); újra feltöltés és `deploy` (restart).
+- **Átfedés:** a régi `kid` legkorábban az app visszaigazolása (4. lépés) után, a vele kiadott leghosszabb link
+  élettartamának elteltével törölhető: böngészős kulcsnál az app `MEDIA_URL_MAX_TTL`-je (9. pont), tartalomkulcsnál a
+  tartalomtoken élettartama (ajánlott 5 perc). Korábban **nem szabad** törölni (kivétel: vészhelyzet, lent).
+- **Az `apps.json` cseréje** (2. és 5. lépés) az üzemeltetőnél: az új fájl a célgépre, ellenőrzés (`check-apps.js`,
+  `nginx -t`), majd újratöltés. Egy fájlként csatolt `apps.json` cseréje új inode-ot ad, ezért restart kell, nem
+  elég a reload; a repó referencia-telepítése ezt egy lépésben végzi (`deploy/deploy.sh <cél> --reload-config`, lásd a
+  `deploy/README.md`-t).
 
-Vészhelyzetben a régi kulcs azonnal törölhető: az app minden kiadott linkje `403`, a kliensek újat kérnek; a többi
-app érintetlen.
+| # | HS256 (az üzemeltető generál) | ES256 (az app generál) |
+| --- | --- | --- |
+| 1 | Bármelyik fél kezdeményezi (ütemezett csere, személyi változás, gyanú). | ugyanaz |
+| 2 | **Üzemeltető:** új `kid` + kulcs a régi mellé (`media-keys <app> --kid <új> [--content] --write <apps.json>`), az `apps.json` cseréje. | **App:** új kulcspár (`media-keys --keypair <app> --kid <új> [--content]`); a `kid`-et, a fajtát és a nyilvános kulcsot elküldi, az ellenőrző jeleket egy második csatornán (10.4). **Üzemeltető:** egyeztetés, `media-keys --register …`, az `apps.json` cseréje. |
+| 3 | **Üzemeltető:** átadja az új `kid`-et és kulcsot (10.4 csatornája). | **Üzemeltető:** visszaigazolja a felvételt (`kid`, ellenőrző jelek); kulcsanyagot nem küld. |
+| 4 | **App:** a `MEDIA_SERVER_KEYS`-ben a régi és az új kulcs, a `MEDIA_SERVER_KEY_ID` az új (tartalomnál a `MEDIA_SERVER_CONTENT_KEY_ID` és a `MEDIA_SERVER_CONTENT_KEY` az új); próbalink `200` (10.5); élesítés; visszaigazolás az üzemeltetőnek, időponttal. | **App:** az új titkos kulcs a `MEDIA_SERVER_PRIVATE_KEYS`-be (a régi kulcs marad, akkor is, ha HS256-os a `MEDIA_SERVER_KEYS`-ben), a `MEDIA_SERVER_KEY_ID` az új (tartalomnál a `MEDIA_SERVER_CONTENT_KEY_ID` és a `MEDIA_SERVER_CONTENT_PRIVATE_KEY`); próbalink `200`; élesítés; visszaigazolás, időponttal. |
+| 5 | **Üzemeltető:** a régi `kid` törlése a visszaigazolás + az átfedés után, az `apps.json` cseréje, jelzés az appnak. | ugyanaz |
+| 6 | **App:** a régi kulcs törlése az env-ből. | ugyanaz; a régi titkos kulcs megsemmisítése |
+
+- **Feltöltő kulcs** (8. pont): az app új ed25519-kulcsot küld (csak a nyilvános felét), az üzemeltető az új
+  `authorized_keys`-sort a régi mellé teszi; az app átáll az új kulcsra és jelez; az üzemeltető törli a régi sort.
+- **Vészhelyzet** (kiszivárgott vagy elveszett kulcs): az üzemeltető a `kid`-et (illetve a feltöltő sort) azonnal törli,
+  és értesíti az appot; az app minden vele aláírt linkje `403 unknown-kid`, a kliensek újat kérnek, de amíg az új
+  `kid` nem él, az app nem tud érvényes linket adni. Az új kulcs a 2–4. lépéssel jön, átfedés nélkül.
 
 ## 8. Feltöltés
 
-A szerver a fájlokat a `dir` alól, csak olvasva adja; a feltöltés rsync ssh-n. A szerződés (egy referencia-feltöltő
-egy fogyasztó app repójában valósítja meg; P):
+A szerver a fájlokat a `dir` alól, csak olvasva adja; a feltöltés rsync ssh-n, az app saját feltöltőjével. Az alábbi
+szabályok a feltöltőre vonatkoznak (rsync-kapcsolók, kizárások, védett útvonalak); a feltöltő az app kódja, ezért
+ebben a repóban nincs tesztje *(teszt nélkül: a fogyasztó a saját tesztjeivel fedi)*. A szerveroldali következmény
+jelölve.
 
-- Appenként egy **korlátozott ssh-kulcs** a szerver felhasználójának `authorized_keys`-ében, amely csak `rrsync`-et
-  enged, csak az app könyvtárába; az rsync célja az rrsync gyökere, útvonal nélkül (`<host>:`). *(teszt nélkül:
-  hoszt-konfiguráció, nincs a repóban, a teszthez ssh-szerver és rrsync kellene; a sor alakja:
-  a repó `deploy/README.md`-je, „Feltöltő kulcs és új app”)*
+- Appenként egy **korlátozott ssh-kulcs** a feltöltő felhasználó `authorized_keys`-ében, amely csak `rrsync`-et
+  enged, csak az app könyvtárába; az rsync célja az rrsync gyökere, útvonal nélkül (`<felhasználó>@<host>:`). A sor
+  alakja (a `<médiagyökér>` a célgép könyvtára, amely a konténerben a `/srv/media`, a `<dir>` az app `dir`-je, 6. pont;
+  a `restrict` tiltja a shellt, a terminált és a továbbításokat):
 
   ```
-  restrict,command="/usr/bin/rrsync -munge /srv/media-server/data/<dir>" ssh-ed25519 AAAA… media-upload-<app>
+  restrict,command="/usr/bin/rrsync -munge <médiagyökér>/<dir>" ssh-ed25519 AAAA… media-upload-<app>
   ```
 
-- Jogosultság a célon: `--chmod=D755,F644` (a konténer olvashassa). (P: „push: -rt --checksum --chmod”, valódi rsync)
+  *(teszt nélkül: hoszt-konfiguráció; a teszthez ssh-szerver és rrsync kellene)*
+- Jogosultság a célon: `--chmod=D755,F644` (a konténer olvashassa).
 - A megszakadt átvitel a `.rsync-partial/` alá kerül (`--partial-dir`); a szerver a `.`-tal kezdődő szegmenst nem
-  szolgálja ki (`403 unsafe-path`). (P: `pushArgs`, `uploadArgs`; V: „.-tal kezdődő fájl”, „. szegmens”; D: „.-tal
-  kezdődő fájl”)
+  szolgálja ki (`403 unsafe-path`; V: „.-tal kezdődő fájl”, „. szegmens”; D: „.-tal kezdődő fájl”).
 - A médiafeltöltés (push) nem visz fel `*.build.json`-t, `*.part*`-ot, `.`-os fájlt és a gyökér `_content/`-jét,
-  és **nem szabad** `--delete`-tel futnia. (P: „a kizárások”, „soha nincs --delete”, „többletfájl megmarad”)
+  és **nem szabad** `--delete`-tel futnia (egy app több forrásból is tölthet; a többletfájl megmarad).
 - A `_content/` a tartalomkiadás helye: `<v>.json.gz`, utána a `<v>.json.gz.sha256` kísérőfájl, `--ignore-existing`-gel
-  (meglévő kiadás nem íródik felül). (P: `uploadArgs`; `contentPublishRemote.spec.ts`)
-- Törlés (prune) csak külön lépésben; a `_content/` egésze és minden `.`-os bejegyzés **védett** (`P /_content/***`,
-  `P .*`). (P: `mediaPrune.spec.ts` „a _content/ és a .-os bejegyzések védettek”, „--apply: … maradnak”)
+  (meglévő kiadás nem íródik felül). A szerver a `_content/` alól csak a `.json.gz`-t adja (3. pont; V, D).
+- Törlés (prune) csak külön lépésben; a `_content/` egésze és minden `.`-os bejegyzés **védett** (rsync-szűrő:
+  `P /_content/***`, `P .*`).
 
 ## 9. Ajánlott backend env-nevek
 
@@ -308,3 +331,107 @@ Konvenció, nem kötelező (a `media-keys` ezeket írja ki, a `media-sign --env`
 | `MEDIA_SERVER_CONTENT_KEY_ID`, `MEDIA_SERVER_CONTENT_KEY` | a tartalomkulcs (ha az app tölt le `_content/`-et) |
 | `MEDIA_SERVER_CONTENT_PRIVATE_KEY` | ES256 tartalom-titkos kulcs, a `MEDIA_SERVER_CONTENT_KEY` helyett (a kettő kizárja egymást) |
 | `MEDIA_URL_MAX_TTL` | a böngészős link leghosszabb élettartama másodpercben (ajánlott `86400`) |
+
+## 10. App-regisztráció
+
+Hogyan lesz egy fogyasztóból a szerver appja: a kérés, az átadás, a próba és a kivezetés. A kulcsforgatás ugyanennek
+a kézfogásnak a folytatása (7. pont). *(teszt nélkül: a fejezet két fél közti eljárás; ahol egy lépést a csomag
+parancsa végez, ott a K teszt jelölve)*
+
+### 10.1 Amit az app kér
+
+Környezetenként egy kérés (pl. `<app>` az éleshez és `<app>-dev` a fejlesztéshez, külön kulcsokkal):
+
+| Adat | Mit jelent |
+| --- | --- |
+| app-név | biztonságos szegmens, nem `_`-sal kezdődik (6. pont); egyben a linkek első útvonal-szegmense |
+| originök | a médiát betöltő oldalak pontos originje (`https://host[:port]`), a CORS-hoz (5. pont); `*` nem |
+| CORP | `same-site` (alapérték), `cross-origin` (az oldal más site-on van, mint a médiaszerver) vagy `same-origin` |
+| séma | `kid`-enként HS256 vagy ES256 (2. pont); új appnak az ES256 ajánlott, mert a regisztráción titok nem halad át |
+| tartalomkulcs | kell-e `_content/`-letöltés (2.1) |
+| feltöltés | kell-e; ha igen, az app ed25519 nyilvános ssh-kulcsa (10.3) |
+| leghosszabb link | a `MEDIA_URL_MAX_TTL` (9. pont); a kulcsforgatás átfedése ehhez igazodik (7. pont) |
+| méret | a várható tárhely és forgalom (a korlátokhoz, 5. pont) |
+| ES256-nál | a `kid`, a fajta (böngészős vagy tartalom) és a nyilvános kulcs, a `media-keys --keypair` kimenetéből |
+
+ES256-nál a kulcspárt **az app generálja**: `media-keys --keypair <app> [--content] [--kid <id>]`. A kimenet két
+része: a backend env-sorai (a titkos kulccsal; ezek az appnál maradnak) és „Az üzemeltetőnek küldendő” blokk (app,
+`kid`, fajta, nyilvános kulcs, az ellenőrző jelek – a nyilvános kulcs első és utolsó 8 jele –, és az üzemeltető
+`--register` parancsa). Az app csak ez utóbbit küldi el. Fájlt nem ír. (K: „parse-olható kimenet: env-sorok (titok)
+és az üzemeltetői sor…”: az üzemeltetői blokkban nincs titkos kulcs.)
+
+### 10.2 Amit az üzemeltető visszaad
+
+- **Mindkét sémánál:** az alap-URL (`MEDIA_SERVER_URL`), az app-név (`MEDIA_SERVER_APP`), a `kid`(ek) fajtával és
+  sémával, a beállított originök és CORP visszaigazolása. Az üzemeltető az `apps.json`-t (6. pont: `dir`, `origins`,
+  `corp`, kulcsok) frissíti és cseréli (7. pont).
+- **HS256:** az üzemeltető generálja a kulcsot (`media-keys <app> [--content] --kid <id> --write <apps.json>`; a
+  kimenet a 9. pont env-sorait is adja, K: „--write: hozzáad és kiírja…”), és a 10.4 csatornáján átadja a
+  böngészős (`MEDIA_SERVER_KEY_ID`, `MEDIA_SERVER_KEYS`) és, ha kérték, a tartalom-`kid`-et és -kulcsot
+  (`MEDIA_SERVER_CONTENT_KEY_ID`, `MEDIA_SERVER_CONTENT_KEY`).
+- **ES256:** az üzemeltető a kapott nyilvános kulcs ellenőrző jeleit egy második csatornán egyezteti az appal, majd
+  felveszi: `media-keys --register <app> --kid <kid> --public-key <87 jel> [--content] --write <apps.json>`. A
+  `--register` ugyanazokat az ellenőrző jeleket írja ki, meglévő `kid`-et vagy kulcsot nem ír felül (K: „hozzáad
+  (publicKeys / contentPublicKeys)…; kid-ütközésre hiba”). Kulcsanyagot nem ad vissza, csak a visszaigazolást
+  (`kid`, ellenőrző jelek). ES256-os próbalinket csak az app tud aláírni (az üzemeltető `media-sign --apps`-a érthető
+  hibát ad; K: „--apps módban egy ES256 kid-re érthető hiba”).
+- **Feltöltéshez:** a 10.3 adatai.
+
+### 10.3 Feltöltési hozzáférés
+
+- Az app **maga generál** egy ed25519 kulcspárt (pl. `ssh-keygen -t ed25519 -C media-upload-<app>`), és csak a
+  nyilvános kulcsot (`.pub`) küldi el; a titkos kulcs nem hagyja el az appot.
+- Az üzemeltető a feltöltő felhasználó `authorized_keys`-ébe a 8. pont korlátozott sorát teszi, a saját
+  `<médiagyökér>`-jével és az app `dir`-jével (helyőrzők nélkül), és létrehozza az app könyvtárát.
+- Visszaadja: a hosztot, az ssh-felhasználót, a hoszt-kulcs ujjlenyomatát (`ssh-keygen -lf`), az rsync célját
+  (`<felhasználó>@<host>:`, útvonal nélkül: az rrsync gyökere az app könyvtára), és a telepített sor leírását. Az app
+  az első kapcsolódáskor az ujjlenyomatot egyezteti.
+- A feltöltő beállításainak (host, kulcsfájl) nevét a SPEC nem írja elő; a feltöltés szabályai a 8. pontban.
+
+### 10.4 Csatorna
+
+- Titok (HS256-kulcs) csak végponttól végpontig titkosított csatornán megy át (pl. egy jelszókezelő megosztott tétele,
+  vagy a címzett nyilvános kulcsára titkosított fájl); nyílt e-mailben, chatben, jegykezelőben és repóban **nem
+  szabad**.
+- A nyilvános kulcsok (ES256, ssh) nem titkok, de a hitelességük számít: egy második, független csatornán egyeztetendők
+  (ES256: az első és utolsó 8 jel; ssh: az ujjlenyomat).
+- Az üzemeltető naplózza: dátum, app, `kid`, fajta, séma, az ellenőrző jelek; a kulcsot soha.
+
+### 10.5 Az app env-je és a próba
+
+Az app a kapott értékeket a 9. pont neveire képezi. Egy `.env` HS256-tal (a `MEDIA_URL_MAX_TTL` az app saját
+beállítása):
+
+```
+MEDIA_SERVER_URL=https://media.example.com
+MEDIA_SERVER_APP=demo
+MEDIA_SERVER_KEY_ID=2026a
+MEDIA_SERVER_KEYS='{"2026a":"<kulcs>"}'
+MEDIA_SERVER_CONTENT_KEY_ID=2026c
+MEDIA_SERVER_CONTENT_KEY=<kulcs>
+MEDIA_URL_MAX_TTL=86400
+```
+
+ES256-tal a kulcssorok helyett (a `media-keys --keypair` ezeket írja ki): `MEDIA_SERVER_KEY_ID=2026e`,
+`MEDIA_SERVER_PRIVATE_KEYS='{"2026e":"<PKCS#8 DER base64url>"}'`, tartalomhoz `MEDIA_SERVER_CONTENT_KEY_ID=2026f` és
+`MEDIA_SERVER_CONTENT_PRIVATE_KEY=<…>`. Egy app a két sémát egyszerre is használhatja (pl. forgatás közben, 7. pont).
+
+**Próba:** az app feltölt egy próbafájlt (8. pont), és a saját env-jéből aláír egy linket, `apps.json` nélkül:
+
+```
+media-sign --env-file .env <assetKey>                          # böngészős link
+media-sign --env-file .env _content/<v>.json.gz --content      # tartalomlink, ha van tartalomkulcs
+curl -sI '<url>'                                               # 200 kell
+```
+
+A regisztráció kész, ha a próbalink `200`-at ad, és az app ezt visszaigazolta. `403` esetén a `kid`, a kulcs vagy
+az app-név nem egyezik (az üzemeltető a naplóban látja az okot: `unknown-app`, `unknown-kid`, `wrong-scheme`,
+`bad-signature`; 4. pont), `404` esetén a fájl hiányzik vagy nem kiszolgálható (3. pont). (K: „App-regisztráció,
+próbalépés: a --env-file linkje a hamis szerveren 200 (HS256 és ES256, böngészős és tartalom)”; „media-sign --env”
+blokk: a kulcs nem kerül a kimenetbe és a hibaüzenetbe.)
+
+### 10.6 Kivezetés
+
+Az app kéri, vagy az üzemeltető határidővel jelzi. Az üzemeltető törli az app bejegyzését az `apps.json`-ból és a
+feltöltő sorát, majd cseréli az `apps.json`-t (7. pont); utána az app minden linkje `403 unknown-app`. Az app
+könyvtára a megbeszélt határidőig megmarad, utána törlődik. Az app törli a kulcsokat az env-jéből.

@@ -3,7 +3,8 @@
 Védett médiaszerver (nginx + njs) és a kliensoldali csomagja, `@chromygabor/media-sdk`. Egy pnpm-workspace:
 
 ```
-packages/media-sdk/   @chromygabor/media-sdk – a protokoll nyilvános szerződése (SPEC.md), aláíró, ./testing, CLI
+packages/media-sdk/   @chromygabor/media-sdk – a protokoll nyilvános szerződése (SPEC.md, benne az
+                      App-regisztráció), aláíró, ./testing, CLI
 server/               @chromygabor/media-server (private) – a termék: Dockerfile (saját image), nginx, njs,
                       compose.yaml (helyi futtatás, teszt), tesztek, mintamédia
 deploy/               generikus telepítés: deploy.sh, compose.yaml (a kész image), .env-minták, host-blokk minta,
@@ -68,6 +69,8 @@ pnpm server:deploy <cél> [--dry-run]   # telepítés a deploy/<cél>/ célgép�
 ```
 
 Helyi futtatás: `server/README.md` „Helyi futtatás”. Telepítés, visszaállás, kulcsforgatás: `deploy/README.md`.
+Egy új app felvétele és a kulcsforgatás két fél (app és üzemeltető) közti kézfogása: SPEC 10. „App-regisztráció”
+és 7. „Kulcsforgatás” (`packages/media-sdk/SPEC.md`).
 
 ## Titkok
 

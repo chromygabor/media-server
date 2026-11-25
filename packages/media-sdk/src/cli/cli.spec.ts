@@ -1,13 +1,14 @@
 // A media-keys és a media-sign CLI (csomagterv WP33; korábban server/test/cli.spec.ts). Az aláírt linket a
 // csomag `verifySignedPath`-ja ellenőrzi (a szerver njs-ével a közös vektorok tartják összhangban).
 
-import { chmodSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { addKey, checkPublicKeys, defaultKid, generateKey, generateKeyPair, publicKeyOf, validateAppsFile, type AppsFile } from '../apps-config.js';
 import { bucketExpires } from '../expires.js';
 import { isValidPrivateKey, isValidPublicKey } from '../keys.js';
+import { startFakeMediaServer } from '../testing/fake-server.js';
 import { testAppsFile, testKeys } from '../testing/test-keys.js';
 import { appLookupFrom, verifySignedPath } from '../token.js';
 import { readAppsFile, writeAppsFile } from './apps-file.js';
@@ -427,6 +428,67 @@ describe('media-sign --env / --env-file (D117)', () => {
     expect(err(esEnv, ['--env', '--env-file', 'x', 'l/a.mp4'])).toMatch(/kizárja egymást/);
     const usage = capture(() => signMain(['--env', testKeys.app, 'l/a.mp4'], esEnv));
     expect([usage.code, usage.err.startsWith('Használat: media-sign')]).toEqual([2, true]);
+  });
+
+  it('App-regisztráció, próbalépés: a --env-file linkje a hamis szerveren 200 (HS256 és ES256, böngészős és tartalom)', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'media-sdk-probe-'));
+    mkdirSync(join(root, 'l'));
+    mkdirSync(join(root, '_content'));
+    writeFileSync(join(root, 'l', 'a.mp4'), 'mp4');
+    writeFileSync(join(root, '_content', 'v1.json.gz'), 'gz');
+    const fake = await startFakeMediaServer({ apps: testAppsFile(), root });
+    try {
+      for (const env of [hsEnv, esEnv]) {
+        const file = tmpFile('.env');
+        writeFileSync(file, Object.entries({ ...env, MEDIA_SERVER_URL: fake.url }).map(([k, v]) => `${k}='${v}'`).join('\n'));
+        for (const args of [['l/a.mp4'], ['_content/v1.json.gz', '--content']]) {
+          const r = capture(() => signMain(['--env-file', file, ...args], {}));
+          expect(r.err).toBe('');
+          expect(r.out.startsWith(`${fake.url}/bcdn_token=`)).toBe(true);
+          expect((await fetch(r.out)).status).toBe(200);
+        }
+      }
+      // Egy, az üzemeltetőnél nem regisztrált kid linkje nem megy át: a próba ezt mutatja meg.
+      const other = generateKeyPair();
+      const unregistered = { ...esEnv, MEDIA_SERVER_URL: fake.url, MEDIA_SERVER_PRIVATE_KEYS: JSON.stringify({ masik: other.privateKey }), MEDIA_SERVER_KEY_ID: 'masik' };
+      const r = capture(() => signMain(['--env', 'l/a.mp4'], unregistered));
+      expect((await fetch(r.out)).status).toBe(403);
+      expect(fake.requests.at(-1)?.verify).toMatchObject({ ok: false, reason: 'unknown-kid' });
+    } finally {
+      await fake.close();
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('kulcsforgatás az app oldalán: két kid az env-ben, a MEDIA_SERVER_KEY_ID választ; HS256 → ES256; a régi kid törlése után 403 unknown-kid', () => {
+    const now = Math.floor(Date.now() / 1000);
+    const oldKid = testKeys.kid;
+    const newKey = generateKey();
+    const apps = testAppsFile();
+    apps[testKeys.app]!.keys['2027a'] = newKey;
+    const sign = (env: Record<string, string>, args: string[] = []) => capture(() => signMain(['--env', 'l/a.mp4', ...args], env)).out;
+    const check = (a: AppsFile, url: string) => verifySignedPath(path(url), appLookupFrom(a), now);
+
+    // HS256 → HS256: a régi és az új kulcs együtt, az új az aktív; a régi --kid-del még aláírható.
+    const hs = { ...hsEnv, MEDIA_SERVER_KEYS: JSON.stringify({ [oldKid]: testKeys.key, '2027a': newKey }), MEDIA_SERVER_KEY_ID: '2027a' };
+    const fresh = sign(hs);
+    const old = sign(hs, ['--kid', oldKid]);
+    expect(fresh).toContain('&kid=2027a&');
+    expect(check(apps, fresh)).toMatchObject({ ok: true, kid: '2027a' });
+    expect(check(apps, old)).toMatchObject({ ok: true, kid: oldKid });
+
+    // HS256 → ES256: a régi HMAC-kulcs a MEDIA_SERVER_KEYS-ben marad, az új ES256-kid a MEDIA_SERVER_PRIVATE_KEYS-ben.
+    const mixed = { ...hsEnv, MEDIA_SERVER_PRIVATE_KEYS: JSON.stringify({ [es.kid]: es.privateKey }), MEDIA_SERVER_KEY_ID: es.kid };
+    const esLink = sign(mixed);
+    expect(esLink).toContain('bcdn_token=ES256-');
+    expect(sign(mixed, ['--kid', oldKid])).toContain('bcdn_token=HS256-');
+    expect(check(apps, esLink)).toMatchObject({ ok: true, kid: es.kid });
+
+    // Az üzemeltető törli a régi kid-et: a vele aláírt link 403 unknown-kid, az újak maradnak.
+    delete apps[testKeys.app]!.keys[oldKid];
+    expect(check(apps, old)).toMatchObject({ ok: false, status: 403, reason: 'unknown-kid' });
+    expect(check(apps, fresh).ok).toBe(true);
+    expect(check(apps, esLink).ok).toBe(true);
   });
 
   it('--apps módban egy ES256 kid-re érthető hiba (az app írja alá, --env)', () => {
