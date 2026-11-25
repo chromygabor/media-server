@@ -1,6 +1,6 @@
 {
   "$schema": "https://json.schemastore.org/tsconfig",
-  // Önálló (extends nélkül): a monorepó `@workspace/tsconfig/library.json` (+ `base.json`) beállításainak kifejtett
+  // Önálló (extends nélkül): a monorepó közös könyvtár-tsconfig-jának (+ alap-tsconfig) beállításainak kifejtett
   // másolata, hogy a csomag a repóból kiemelhető legyen. Ha a repó beállításai változnak, ezt is igazítani kell.
   "compilerOptions": {
     "target": "ES2023",

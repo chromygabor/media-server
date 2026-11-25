@@ -95,15 +95,15 @@ mezője `1` marad: a meglévő vektorok bájtra változatlanok, az `es256` blokk
 ## [0.1.0] – 2026-11-24
 
 ### Változott
-- Új név és hely: `@workspace/media-token` → `@cry/media-sdk`, `packages/media-token` → `packages/media-sdk`
+- Új név és hely: a workspace-beli `media-token` → `@cry/media-sdk`, `packages/media-token` → `packages/media-sdk`
   (csomagterv WP30, D1). A fogyasztók (backend, frontend e2e, médiaszerver) importjai átírva.
 - `version 0.1.0`, `private: true`, `license: UNLICENSED` (D4) a kiemelésig.
-- Önálló build: a `tsconfig.json` nem örököl a monorepó `@workspace/tsconfig`-jából (a beállítások kifejtve), és a
+- Önálló build: a `tsconfig.json` nem örököl a monorepó közös tsconfig-jából (a beállítások kifejtve), és a
   csomagnak nincs `workspace:` függősége.
 - A hibaüzenetek előtagja `media-token:` helyett `media-sdk:`.
 
 ### Új
-- `check:standalone` (`scripts/check-standalone.sh`): statikus ellenőrzés (nincs `@workspace/` hivatkozás, a
+- `check:standalone` (`scripts/check-standalone.sh`): statikus ellenőrzés (nincs idegen csomaghatókörű hivatkozás, a
   csomagkönyvtárból kilépő import, `extends`, futásidejű függőség), majd `pnpm pack`, telepítés egy üres projektbe
   `npm install`-lal, ESM- és CJS-próba minden alútvonalra és egy aláírási vektorra.
 

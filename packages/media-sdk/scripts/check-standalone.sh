@@ -4,9 +4,10 @@
 #
 #   pnpm --filter @chromygabor/media-sdk check:standalone
 #
-# 1. Statikus ellenőrzés: a csomag neve `@chromygabor/media-sdk` (D90); a `src/` alatt nincs `@workspace/` és `@cry/`
-#    hivatkozás, és nincs a csomagkönyvtárból kilépő relatív import; a tsconfig nem örököl (`extends` nincs); a
-#    package.json-ban nincs `workspace:` / `@workspace/` függőség, és futásidejű függőség (`dependencies`, `peerDependencies`, `optionalDependencies`) sincs.
+# 1. Statikus ellenőrzés: a csomag neve `@chromygabor/media-sdk` (D90); a `src/` alatt a `@chromygabor/`-on kívül nincs
+#    más csomaghatókör (`@<scope>/`, így a régi `@cry/` sem), és nincs a csomagkönyvtárból kilépő relatív import; a
+#    tsconfig nem örököl (`extends` nincs); a
+#    package.json-ban nincs `workspace:` / `link:` / `file:` (helyi) függőség, és futásidejű függőség (`dependencies`, `peerDependencies`, `optionalDependencies`) sincs.
 # 2. Build, majd `pnpm pack` egy ideiglenes könyvtárba (mktemp -d; a végén törlődik).
 # 3. Ott egy üres projekt, `npm install <tarball>`.
 # 4. Egy ESM és egy CJS próba: minden alútvonal (SUBPATHS) betölthető, és a `test-vectors.json` első `sign` vektora
@@ -46,8 +47,9 @@ fail() {
 echo "▸ $PKG_NAME önállósági ellenőrzés ($PKG_DIR)"
 
 # --- 1. Statikus ellenőrzés --------------------------------------------------------------------------------------
-if grep -rnE --include='*.ts' --include='*.js' --include='*.mjs' --include='*.cjs' --include='*.json' '@workspace/|@cry/' src/; then
-  fail "a src/ alatt @workspace/ vagy régi (@cry/) csomagnév-hivatkozás van (fent)"
+if grep -rnoE --include='*.ts' --include='*.js' --include='*.mjs' --include='*.cjs' --include='*.json' '@[A-Za-z0-9._-]+/' src/ \
+  | grep -vE ':@chromygabor/$'; then
+  fail "a src/ alatt @chromygabor/-on kívüli csomaghatókör-hivatkozás van (fent)"
 fi
 [ "$PKG_NAME" = "@chromygabor/media-sdk" ] || fail "a csomag neve $PKG_NAME, nem @chromygabor/media-sdk (D90)"
 
@@ -103,7 +105,7 @@ for (const field of ['dependencies', 'peerDependencies', 'optionalDependencies']
   if (pkg[field] && Object.keys(pkg[field]).length > 0) problems.push(`futásidejű függőség (${field}): ${Object.keys(pkg[field]).join(', ')}`);
 }
 for (const [name, spec] of Object.entries(pkg.devDependencies ?? {})) {
-  if (name.startsWith('@workspace/') || String(spec).startsWith('workspace:')) problems.push(`devDependency: ${name}@${spec}`);
+  if (/^(workspace|link|file):/.test(String(spec))) problems.push(`devDependency: ${name}@${spec}`);
 }
 const exported = Object.keys(pkg.exports ?? {}).sort();
 const listed = process.argv.slice(2).sort();
