@@ -12,7 +12,37 @@ deploy/<cél>/         gitignore-olt: egy célgép saját adatai (.env: DEPLOY_H
 ```
 
 A szerver a csomagot `workspace:*`-ként használja; az njs ↔ SDK paritást (közös vektorok, `validateApps`,
-hamis szerver, docker-teszt) egy CI-futás ellenőrzi.
+hamis szerver, docker-teszt) a repó kapuja ellenőrzi (`pnpm test`, `check:standalone`, `pnpm test:docker`), és minden
+deploy előtt a `deploy.sh` a kiszállítandó image-en. CI nincs.
+
+## Telepítés (a csomag fogyasztóinak)
+
+A `@chromygabor/media-sdk` nincs npm-regisztryben. Minden verzió egy GitHub Release melléklete (tag:
+`sdk-v<verzió>`), és a fogyasztó URL-függőségként telepíti, pnpm-mel és npm-mel egyformán:
+
+```json
+{
+  "dependencies": {
+    "@chromygabor/media-sdk": "https://github.com/chromygabor/media-server/releases/download/sdk-v1.0.0/chromygabor-media-sdk-1.0.0.tgz"
+  }
+}
+```
+
+vagy parancssorból: `pnpm add <URL>` / `npm install <URL>`. Részletek (frissítés, mit rögzít a lockfile):
+[`packages/media-sdk/README.md`](packages/media-sdk/README.md) „Telepítés”.
+
+## Kiadás (üzemeltető)
+
+```
+pnpm release:sdk           # tiszta munkafa → build, tesztek, pack a dist-release/ alá, check:standalone ezen a fájlon,
+                           # sha256 + integrity, Release-jegyzet; a kézi lépéseket kiírja (soha nem pushol)
+pnpm release:sdk --tag     # ugyanez, és helyben létrehozza az annotált sdk-v<verzió> taget
+```
+
+Előtte: a verzió a `packages/media-sdk/package.json`-ban, a CHANGELOG `## [<verzió>]` szakasza, commit. Utána kézzel:
+`git push origin main`, `git push origin sdk-v<verzió>`, GitHub Release a tagre a `dist-release/` `.tgz`-jével
+mellékletként (webes felület vagy `gh release create`), végül a letöltési URL sha256-jának ellenőrzése. A szkript
+mindezt a pontos parancsokkal kiírja.
 
 ## Előfeltételek
 

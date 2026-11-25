@@ -15,6 +15,7 @@
     "test:docker": "pnpm --filter @chromygabor/media-server test:docker",
     "image:build": "bash server/scripts/image-build.sh",
     "server:deploy": "deploy/deploy.sh",
-    "dev-media": "pnpm --filter @chromygabor/media-server dev-media"
+    "dev-media": "pnpm --filter @chromygabor/media-server dev-media",
+    "release:sdk": "bash scripts/release-sdk.sh"
   }
 }

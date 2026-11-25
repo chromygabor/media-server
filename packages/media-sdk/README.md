@@ -23,6 +23,32 @@ sig = Base64URL(HMAC-SHA256(kulcs, M))                       HS256: Bunny-kompat
 A séma a `kid`-ből jön (`keys`/`contentKeys` → HS256, `publicKeys`/`contentPublicKeys` → ES256), soha nem a
 tokenből. Mindkettő elsőrangú; egy appnak lehetnek mindkét fajtájú `kid`-jei.
 
+## Telepítés
+
+A csomag nincs npm-regisztryben: minden verzió a `chromygabor/media-server` repó egy GitHub Release-ének melléklete
+(tag: `sdk-v<verzió>`, fájl: `chromygabor-media-sdk-<verzió>.tgz`). URL-függőségként telepíthető, token és
+regisztry-beállítás nélkül, pnpm-mel és npm-mel egyformán:
+
+```json
+"@chromygabor/media-sdk": "https://github.com/chromygabor/media-server/releases/download/sdk-v1.0.0/chromygabor-media-sdk-1.0.0.tgz"
+```
+
+```sh
+pnpm add https://github.com/chromygabor/media-server/releases/download/sdk-v1.0.0/chromygabor-media-sdk-1.0.0.tgz
+npm install https://github.com/chromygabor/media-server/releases/download/sdk-v1.0.0/chromygabor-media-sdk-1.0.0.tgz
+```
+
+- **A tarball kész csomag:** benne van a lefordított `dist/`, telepítéskor nincs build és nincs életciklus-szkript
+  (`install`, `prepare` stb.); futásidejű függősége nincs.
+- **A lockfile rögzíti:** a pnpm és az npm a tarball URL-jét és `sha512-…` integrity-jét írja a lockfile-ba; egy
+  később más tartalommal felülírt melléklet telepítése hibát ad.
+- **Frissítés:** semver-tartomány (`^1.0.0`) itt nincs; a verziót az URL két helyén kell átírni (`sdk-v<verzió>` és a
+  fájlnév), utána `pnpm install` / `npm install`. A változásokat a `CHANGELOG.md` írja le; a semver jelentése
+  ugyanaz, mint egy regisztryből jövő csomagnál (major: törő protokoll- vagy felületváltozás).
+- **A melléklet pontosan a kipróbált fájl:** a kiadási szkript (`pnpm release:sdk` a repó gyökerében) ugyanazt a
+  `.tgz`-t ellenőrzi a `check:standalone`-nal egy üres projektben (ESM, CJS, `./testing`, `bin`), amelyet a Release-be
+  feltöltünk; a sha256-ja a Release szövegében áll.
+
 ## Gyors kezdés egy új apphoz
 
 Két egyenrangú kulcsmodell, appenként és `kid`-enként választható:

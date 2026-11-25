@@ -15,6 +15,10 @@
 #    és egy `testKeys`-szel aláírt linket kér le (WP35).
 # 5. Minden `bin` (BINS) `--help`-je 0-val lép ki.
 #
+# Kész tarball ellenőrzése (a kiadáshoz, `scripts/release-sdk.sh`): `MEDIA_SDK_TARBALL=<út a .tgz-hez>` mellett a 2.
+# lépés (build, pack) kimarad, és a 3–5. lépés pontosan ezt a fájlt telepíti és próbálja ki; a tarball neve és
+# verziója egyezni kell a package.json-nal.
+#
 # Bővítés: új alútvonalnál a SUBPATHS, új parancsnál a BINS listába kell felvenni (a package.json `exports` / `bin`
 # mezőjével együtt). A szkript ellenőrzi, hogy a SUBPATHS pontosan az `exports` kulcsait tartalmazza.
 
@@ -129,11 +133,21 @@ TMP="$(mktemp -d "${TMPDIR:-/tmp}/media-sdk-standalone.XXXXXX")"
 cleanup() { rm -rf -- "$TMP"; }
 trap cleanup EXIT
 
-pnpm run --silent build >/dev/null
-pnpm pack --pack-destination "$TMP/pack" >/dev/null
-TARBALL="$(ls "$TMP"/pack/*.tgz)"
-[ -f "$TARBALL" ] || fail "a pnpm pack nem készített tarballt"
-echo "  ✓ pack: $(basename "$TARBALL")"
+if [ -n "${MEDIA_SDK_TARBALL:-}" ]; then
+  [ -f "$MEDIA_SDK_TARBALL" ] || fail "a MEDIA_SDK_TARBALL nem létező fájl: $MEDIA_SDK_TARBALL"
+  TARBALL="$(cd "$(dirname "$MEDIA_SDK_TARBALL")" && pwd)/$(basename "$MEDIA_SDK_TARBALL")"
+  PKG_VERSION="$(node -p "require('./package.json').version")"
+  TAR_ID="$(tar -xzOf "$TARBALL" package/package.json | node -e 'const p = JSON.parse(require("fs").readFileSync(0, "utf8")); console.log(`${p.name}@${p.version}`)')" \
+    || fail "a tarballban nincs olvasható package/package.json"
+  [ "$TAR_ID" = "$PKG_NAME@$PKG_VERSION" ] || fail "a tarball $TAR_ID, a package.json $PKG_NAME@$PKG_VERSION"
+  echo "  ✓ kész tarball (build és pack nélkül): $(basename "$TARBALL")"
+else
+  pnpm run --silent build >/dev/null
+  pnpm pack --pack-destination "$TMP/pack" >/dev/null
+  TARBALL="$(ls "$TMP"/pack/*.tgz)"
+  [ -f "$TARBALL" ] || fail "a pnpm pack nem készített tarballt"
+  echo "  ✓ pack: $(basename "$TARBALL")"
+fi
 
 # --- 3. Üres projekt, npm install ----------------------------------------------------------------------------------
 mkdir -p "$TMP/probe"
