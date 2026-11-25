@@ -117,7 +117,8 @@ NOTES="$OUT_DIR/$TAG_NAME-notes.md"
 awk -v ver="$VERSION" '
   index($0, "## [" ver "]") == 1 { on = 1; next }
   on && /^## \[/ { exit }
-  on { print }
+  on && !started && /^$/ { next }
+  on { started = 1; print }
 ' "$PKG_DIR/CHANGELOG.md" >"$NOTES.body"
 {
   echo "Telepítés (pnpm vagy npm), a package.json-ban:"
