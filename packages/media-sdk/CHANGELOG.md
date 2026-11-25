@@ -6,8 +6,29 @@ változatlansága a `test-vectors.json` vektoraival ellenőrzött; ennek megtör
 
 ## [Kiadatlan]
 
-A következő kiadás `0.2.0` (0.x alatt a minor jelzi a törő változást, lásd „Törő”). A `test-vectors.json` `version`
-mezője `1` marad: a meglévő vektorok bájtra változatlanok, az `es256` blokk új.
+## [1.0.0] – 2026-11-25
+
+Az első kiadás a repón kívüli fogyasztóknak. A `0.1.0` óta minden változás ebben a szakaszban van (`0.2.0` nem
+jelent meg, a „Törő” pont a `0.1.0`-hoz képest értendő). A `test-vectors.json` `version` mezője `1` marad: a meglévő
+vektorok bájtra változatlanok, az `es256` blokk új. Ettől a kiadástól a szemantikus verziózás érvényes (major: a
+protokoll, egy export vagy alútvonal eltávolítása, egy meglévő vektor változása; minor: új export, vektor, opció;
+patch: javítás).
+
+Összefoglalva:
+- **Protokoll** (`protocol: 1`, SPEC): aláírt directory-token két sémával, **HS256** (HMAC-SHA256, Bunny-kompatibilis,
+  közös titok) és **ES256** (ECDSA P-256, az app saját kulcspárja, a szerver csak a nyilvános kulcsot ismeri). A
+  sémát a `kid` választja ki (`keys`/`contentKeys` → HS256, `publicKeys`/`contentPublicKeys` → ES256), soha nem a
+  token; egy appnak mindkét fajtájú `kid`-jei lehetnek.
+- **Könyvtár:** `signToken`, `buildSignedPath`, `verifySignedPath`, `createUrlSigner` (böngészős és tartalomlinkek),
+  kulcs- és útvonal-szabályok; `./apps-config` (az `apps.json` típusai és ellenőrzése); `./test-vectors.json`.
+- **CLI:** `media-keys` (HMAC-kulcs, `--keypair` az appnak, `--register` az üzemeltetőnek) és `media-sign`
+  (`--apps` az üzemeltetőnek, `--env` / `--env-file` az appnak, `apps.json` nélkül).
+- **`./testing`:** hamis médiaszerver a SPEC szabályaival és CSAK TESZT kulcsok (`testKeys`, `testAppsFile()`) a
+  fogyasztók tesztjeihez.
+- **Terjesztés:** npm-regisztry nélkül, a `chromygabor/media-server` repó `sdk-v<verzió>` GitHub Release-ének
+  mellékleteként (`chromygabor-media-sdk-<verzió>.tgz`); a fogyasztó URL-függőségként telepíti (README,
+  „Telepítés”). A melléklet pontosan az a tarball, amelyet a kiadási szkript (`pnpm release:sdk`) a `check:standalone`-
+  nal egy üres projektben kipróbált. A csomag `private: true` marad, így véletlenül sem kerül npm-regisztrybe.
 
 ### Törő
 - `VerifyFailureReason` új tagja: `wrong-scheme` (SPEC 4., 6a lépés). Egy fogyasztó kimerítő (`never`-re futó)
@@ -17,14 +38,16 @@ mezője `1` marad: a meglévő vektorok bájtra változatlanok, az `es256` blokk
   fordulnak.
 
 ### Változott
-- Licenc: `UNLICENSED` → **MIT** (a repó gyökerének `LICENSE`-e; az egész repó MIT). A csomag továbbra is
-  `private: true` a publikálásig.
+- Licenc: `UNLICENSED` → **MIT** (a repó gyökerének `LICENSE`-e; az egész repó MIT). A csomag `private: true`
+  marad: GitHub Release-mellékletként terjed, npm-regisztrybe nem kerül.
 - `testKeys.apps` / `testAppsFile()`: a `publicKeys` és a `contentPublicKeys` is benne van (a `testKeys.es256`
   nyilvános kulcsaival); egy rá `toEqual`-lal néző fogyasztói teszt ezt felveszi.
 - Új név: `@cry/media-sdk` → `@chromygabor/media-sdk` (kiemelési terv D90: a GitHub Packages a
   hatókört a repó tulajdonosához köti). A könyvtár marad `packages/media-sdk`; a felület és a vektorok változatlanok.
 
 ### Új
+- `check:standalone`: `MEDIA_SDK_TARBALL=<.tgz>` mellett egy kész tarballt ellenőriz (build és pack nélkül; a
+  neve és a verziója egyezni kell a `package.json`-nal). A kiadási szkript így pontosan a kiadandó fájlt próbálja ki.
 - **ES256 séma** (SPEC 1., 2., 2.1, 4., 6.; aszimmetrikus aláírás, aszimmetrikus terv
   WP50): `ES256-` + 86 jeles token (ECDSA P-256 + SHA-256 ugyanazon az aláírt szövegen, `r ‖ s`, low-S), a
   médiaszerver kiterjesztése, Bunny-megfelelője nincs; a HS256 változatlanul megmarad. A séma a `kid`-ből jön:
